@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Fungsi bantuan untuk mengecek apakah user sudah login (Anonymous atau Admin)
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Aturan untuk Koleksi Candidates
+    match /candidates/{candidateId} {
+      // Siapapun boleh membaca data kandidat (agar bisa tampil di halaman user)
+      allow read: if true;
+      // Hanya user yang sudah 'login' (token masuk) yang boleh update (tambah suara)
+      // Admin juga butuh ini untuk create/delete
+      allow create, update, delete: if isAuthenticated();
+    }
+
+    // Aturan untuk Koleksi Tokens
+    match /tokens/{tokenId} {
+      // Siapapun boleh membaca (untuk validasi awal di halaman login)
+      allow read: if true;
+      // Hanya user login yang boleh update (ubah status jadi isUsed: true)
+      allow create, update: if isAuthenticated();
+    }
+  }
+}

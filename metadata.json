@@ -1,0 +1,5 @@
+{
+  "name": "E-Voting RT",
+  "description": "A secure, token-based voting system for RT elections using Firebase.",
+  "requestFramePermissions": []
+}
