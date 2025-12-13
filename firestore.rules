@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -20,8 +21,8 @@ service cloud.firestore {
     match /tokens/{tokenId} {
       // Siapapun boleh membaca (untuk validasi awal di halaman login)
       allow read: if true;
-      // Hanya user login yang boleh update (ubah status jadi isUsed: true)
-      allow create, update: if isAuthenticated();
+      // PERBAIKAN: Menambahkan 'delete' agar admin bisa menghapus data pemilih
+      allow create, update, delete: if isAuthenticated();
     }
   }
 }

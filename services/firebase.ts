@@ -13,7 +13,9 @@ import {
   orderBy, 
   runTransaction,
   deleteDoc,
-  increment
+  increment,
+  writeBatch, // Added
+  getDocs     // Added
 } from "firebase/firestore";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import { Candidate, TokenData } from "../types";
@@ -79,7 +81,7 @@ export const deleteCandidate = async (id: string) => {
   await deleteDoc(doc(db, "candidates", id));
 };
 
-// --- TOKEN SERVICES ---
+// --- TOKEN & VOTER SERVICES ---
 
 export const generateUniqueToken = (): string => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No I, 1, O, 0 to avoid confusion
@@ -90,17 +92,32 @@ export const generateUniqueToken = (): string => {
   return result;
 };
 
-export const createTokens = async (amount: number) => {
-  const batchProms = [];
-  for (let i = 0; i < amount; i++) {
-    const tokenStr = generateUniqueToken();
-    const tokenRef = doc(db, "tokens", tokenStr);
-    batchProms.push(setDoc(tokenRef, {
-      isUsed: false,
-      generatedAt: Date.now()
-    }));
+// NEW: Register Voter (DPT)
+export const registerVoter = async (name: string, block: string) => {
+  const tokenStr = generateUniqueToken();
+  const tokenRef = doc(db, "tokens", tokenStr);
+  
+  // Create token document predefined with voter info
+  await setDoc(tokenRef, {
+    id: tokenStr,
+    isUsed: false,
+    generatedAt: Date.now(),
+    voterName: name,
+    voterBlock: block
+  });
+};
+
+// NEW: Delete Voter/Token
+export const deleteToken = async (tokenId: string) => {
+  try {
+    await deleteDoc(doc(db, "tokens", tokenId));
+  } catch (error: any) {
+    console.error("Error deleting token:", error);
+    if (error.code === 'permission-denied') {
+      throw new Error("Akses ditolak. Cek Firebase Rules.");
+    }
+    throw error;
   }
-  await Promise.all(batchProms);
 };
 
 export const subscribeToTokens = (callback: (data: TokenData[]) => void) => {
@@ -113,23 +130,77 @@ export const subscribeToTokens = (callback: (data: TokenData[]) => void) => {
   });
 };
 
+// --- RESET DATA SERVICE ---
+export const resetElectionData = async (): Promise<{ success: boolean; message: string }> => {
+  try {
+    // 1. Collect ALL operations needed
+    const tokensQ = query(collection(db, "tokens"));
+    const tokensSnap = await getDocs(tokensQ);
+    
+    const candidatesQ = query(collection(db, "candidates"));
+    const candidatesSnap = await getDocs(candidatesQ);
+
+    const operations = [
+      ...tokensSnap.docs.map(d => ({ type: 'delete', ref: d.ref })),
+      ...candidatesSnap.docs.map(d => ({ type: 'update', ref: d.ref, data: { votes: 0 } }))
+    ];
+
+    if (operations.length === 0) {
+        return { success: true, message: "Tidak ada data untuk direset." };
+    }
+
+    // 2. Execute in chunks (Batch Limit is 500)
+    const BATCH_SIZE = 500;
+    for (let i = 0; i < operations.length; i += BATCH_SIZE) {
+        const batch = writeBatch(db);
+        const chunk = operations.slice(i, i + BATCH_SIZE);
+        
+        chunk.forEach((op: any) => {
+            if (op.type === 'delete') {
+                batch.delete(op.ref);
+            } else {
+                // @ts-ignore
+                batch.update(op.ref, op.data);
+            }
+        });
+        
+        await batch.commit();
+    }
+
+    return { success: true, message: "Data berhasil direset bersih (DPT dihapus, Suara 0)." };
+  } catch (error: any) {
+    console.error("Error resetting data:", error);
+    if (error.code === 'permission-denied') {
+        return { success: false, message: "Gagal: Izin ditolak. Mohon update Firebase Rules untuk mengizinkan DELETE." };
+    }
+    return { success: false, message: error.message };
+  }
+};
+
 // --- VOTING LOGIC ---
 
-export const validateToken = async (token: string): Promise<{ valid: boolean; message: string }> => {
+// Updated to return Data if valid
+export const validateToken = async (token: string): Promise<{ valid: boolean; message: string; data?: TokenData }> => {
   try {
     const tokenRef = doc(db, "tokens", token.toUpperCase());
     const tokenSnap = await getDoc(tokenRef);
 
     if (!tokenSnap.exists()) {
-      return { valid: false, message: "Token tidak ditemukan." };
+      return { valid: false, message: "Token tidak ditemukan / tidak terdaftar." };
     }
 
     const data = tokenSnap.data() as TokenData;
-    if (data.isUsed) {
-      return { valid: false, message: "Token sudah digunakan." };
+    
+    // Additional security check: Ensure this token actually has voter data assigned (DPT system)
+    if (!data.voterName) {
+       return { valid: false, message: "Token ini rusak atau belum dikonfigurasi admin." };
     }
 
-    return { valid: true, message: "Token valid." };
+    if (data.isUsed) {
+      return { valid: false, message: `Token ini sudah digunakan oleh ${data.voterName}.` };
+    }
+
+    return { valid: true, message: "Token valid.", data: data };
   } catch (error: any) {
     console.error("Error validating token:", error);
     if (error.code === 'permission-denied') {
@@ -141,9 +212,9 @@ export const validateToken = async (token: string): Promise<{ valid: boolean; me
 
 export const submitVote = async (
   token: string, 
-  candidateId: string, 
-  voterName: string, 
-  voterBlock: string
+  candidateId: string,
+  voterName: string,
+  voterBlock: string 
 ): Promise<{ success: boolean; message: string }> => {
   // SAFETY CHECK: Pastikan auth active sebelum transaksi
   if (!auth.currentUser) {
@@ -157,7 +228,7 @@ export const submitVote = async (
   const tokenRef = doc(db, "tokens", token.toUpperCase());
   const candidateRef = doc(db, "candidates", candidateId);
 
-  console.log(`[VOTE START] Token: ${token}, Candidate: ${candidateId}, Voter: ${voterName}, Block: ${voterBlock}`);
+  console.log(`[VOTE START] Token: ${token}, Candidate: ${candidateId}`);
 
   try {
     await runTransaction(db, async (transaction) => {
@@ -178,15 +249,12 @@ export const submitVote = async (
         throw new Error("Data kandidat tidak ditemukan!");
       }
 
-      console.log("[VOTE CHECK PASS] Updating data...");
-
-      // 3. Update Token (Mark as used AND save voter data AND save chosen candidate)
+      // 3. Update Token (Mark as used & save used time & candidate selection for analysis)
+      // Note: voterName and voterBlock are already in the doc from registration, but we keep/ensure them here.
       transaction.update(tokenRef, {
         isUsed: true,
         usedAt: Date.now(),
-        voterName: voterName,
-        voterBlock: voterBlock,
-        candidateId: candidateId // Penting untuk analisis per blok
+        candidateId: candidateId
       });
 
       // 4. Update Candidate (Increment vote atomically)

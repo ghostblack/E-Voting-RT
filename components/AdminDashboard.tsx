@@ -18,12 +18,14 @@ import { Candidate, TokenData } from '../types';
 import { 
   subscribeToCandidates, 
   subscribeToTokens, 
-  createTokens, 
+  registerVoter,
   addCandidate, 
   updateCandidateData,
-  deleteCandidate 
+  deleteCandidate,
+  deleteToken,
+  resetElectionData
 } from '../services/firebase';
-import { Button, Input, Card, Badge, Select } from './UIComponents';
+import { Button, Input, Card, Badge, Select, Modal } from './UIComponents';
 
 // --- CUSTOM CHART COMPONENT ---
 const BarImageLabel = (props: any) => {
@@ -54,7 +56,7 @@ const BarImageLabel = (props: any) => {
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState<'results' | 'candidates' | 'tokens' | 'voters' | 'live_count'>('results');
+  const [activeTab, setActiveTab] = useState<'results' | 'candidates' | 'voters' | 'live_count'>('results');
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [tokens, setTokens] = useState<TokenData[]>([]);
   
@@ -65,7 +67,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   // Analisis Blok State
   const [selectedAnalysisBlock, setSelectedAnalysisBlock] = useState('Blok A');
 
-  // Form States
+  // Candidate Form States
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formCandidate, setFormCandidate] = useState({ 
     name: '', 
@@ -74,8 +76,21 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     photoUrl: 'https://picsum.photos/200' 
   });
   
-  const [tokenAmount, setTokenAmount] = useState(1);
-  const [isGenerating, setIsGenerating] = useState(false);
+  // Voter Registration Form State
+  const [newVoterName, setNewVoterName] = useState('');
+  const [newVoterBlock, setNewVoterBlock] = useState('Blok A');
+  const [isRegistering, setIsRegistering] = useState(false);
+
+  // --- MODAL STATES ---
+  const [isResetting, setIsResetting] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
+  
+  const [tokenToDelete, setTokenToDelete] = useState<TokenData | null>(null);
+  const [isDeletingToken, setIsDeletingToken] = useState(false);
+
+  // --- NEW: VOTER LIST FILTERS ---
+  const [filterBlock, setFilterBlock] = useState('ALL');
+  const [filterStatus, setFilterStatus] = useState('ALL');
 
   useEffect(() => {
     const unsubC = subscribeToCandidates(setCandidates);
@@ -189,14 +204,84 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     }
   };
 
-  const handleGenerateTokens = async () => {
-    setIsGenerating(true);
-    await createTokens(tokenAmount);
-    setIsGenerating(false);
-    setTokenAmount(1);
+  // --- RESET DATA LOGIC (NOW WITH MODAL) ---
+  const handleResetDataClick = () => {
+    setShowResetModal(true);
   };
 
-  // --- NEW FEATURE: PRINT TOKENS ---
+  const confirmResetData = async () => {
+      setIsResetting(true);
+      const result = await resetElectionData();
+      setIsResetting(false);
+      setShowResetModal(false);
+      
+      if (result.success) {
+         // Optional: Toast message here
+         console.log("Reset Success");
+      } else {
+         alert("Gagal mereset data: " + result.message);
+      }
+  };
+
+  // --- VOTER REGISTRATION LOGIC ---
+  const handleRegisterVoter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if(!newVoterName) return;
+    setIsRegistering(true);
+    await registerVoter(newVoterName, newVoterBlock);
+    setIsRegistering(false);
+    setNewVoterName('');
+    // Block remains same for easier bulk input
+  };
+
+  // --- DELETE TOKEN LOGIC (NOW WITH MODAL) ---
+  const handleDeleteTokenClick = (token: TokenData) => {
+    setTokenToDelete(token);
+  };
+
+  const confirmDeleteToken = async () => {
+    if (!tokenToDelete) return;
+    setIsDeletingToken(true);
+    try {
+        await deleteToken(tokenToDelete.id);
+        setTokenToDelete(null); // Close modal
+    } catch (e: any) {
+        alert("Gagal menghapus: " + e.message);
+    } finally {
+        setIsDeletingToken(false);
+    }
+  };
+
+  // --- NEW FEATURE: EXPORT CSV ---
+  const handleExportCSV = () => {
+    if (tokens.length === 0) {
+      alert("Belum ada data pemilih.");
+      return;
+    }
+
+    // CSV Header
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Nama Pemilih,Blok,Token,Status,Waktu Memilih\n";
+
+    // CSV Rows
+    tokens.forEach(t => {
+      // Escape commas in name just in case
+      const cleanName = t.voterName?.replace(/,/g, " ") || "Anonim";
+      const status = t.isUsed ? "Sudah Memilih" : "Belum Memilih";
+      const time = t.usedAt ? new Date(t.usedAt).toLocaleString() : "-";
+      csvContent += `${cleanName},${t.voterBlock},${t.id},${status},${time}\n`;
+    });
+
+    // Create Download Link
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "data_pemilih_rt.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handlePrintTokens = () => {
     const unusedTokens = tokens.filter(t => !t.isUsed);
     if (unusedTokens.length === 0) {
@@ -210,7 +295,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     const htmlContent = `
       <html>
         <head>
-          <title>Cetak Token Pemilihan</title>
+          <title>Cetak Token Pemilih</title>
           <style>
             body { font-family: monospace; padding: 20px; }
             .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -219,31 +304,32 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
               padding: 15px; 
               text-align: center; 
               border-radius: 8px;
+              page-break-inside: avoid;
             }
             .token-code { font-size: 24px; font-weight: bold; margin: 10px 0; letter-spacing: 2px; }
             .token-label { font-size: 10px; color: #555; }
             .voter-field { 
-              margin-top: 15px; 
-              border-bottom: 1px solid #000; 
-              height: 20px; 
+              margin-top: 10px; 
               text-align: left;
               font-size: 12px;
+              font-weight: bold;
             }
+            .voter-sub { font-size: 10px; color: #666; font-weight: normal;}
             @media print {
               .no-print { display: none; }
             }
           </style>
         </head>
         <body>
-          <h1 style="text-align:center; margin-bottom: 20px;">TOKEN PEMILIHAN KETUA RT</h1>
+          <h1 style="text-align:center; margin-bottom: 20px;">KARTU AKSES E-VOTING RT</h1>
           <div class="grid">
             ${unusedTokens.map(t => `
               <div class="token-card">
                 <div class="token-label">KODE AKSES</div>
                 <div class="token-code">${t.id}</div>
-                <div class="voter-field">Nama: </div>
-                <div class="voter-field">Blok: </div>
-                <div style="font-size: 9px; margin-top: 10px;">Rahasiakan token ini sampai bilik suara.</div>
+                <div class="voter-field">${t.voterName || '..................'}</div>
+                <div class="voter-sub">${t.voterBlock || '..................'}</div>
+                <div style="font-size: 9px; margin-top: 10px; border-top: 1px dotted #ccc; pt-2">Rahasiakan token ini.</div>
               </div>
             `).join('')}
           </div>
@@ -257,42 +343,10 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     printWindow.document.close();
   };
 
-  // --- NEW FEATURE: EXPORT CSV ---
-  const handleExportCSV = () => {
-    const usedTokens = tokens.filter(t => t.isUsed);
-    if (usedTokens.length === 0) {
-      alert("Belum ada data pemilih.");
-      return;
-    }
-
-    // CSV Header
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Nama Pemilih,Blok,Token,Waktu Memilih\n";
-
-    // CSV Rows
-    usedTokens.forEach(t => {
-      // Escape commas in name just in case
-      const cleanName = t.voterName?.replace(/,/g, " ") || "Anonim";
-      const time = t.usedAt ? new Date(t.usedAt).toLocaleString() : "-";
-      csvContent += `${cleanName},${t.voterBlock},${t.id},${time}\n`;
-    });
-
-    // Create Download Link
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "data_pemilih_rt.csv");
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   // --- STATISTICS CALCULATION ---
   const totalVotes = candidates.reduce((acc, curr) => acc + (curr.votes || 0), 0);
   const usedTokens = tokens.filter(t => t.isUsed).length;
   const participationRate = tokens.length > 0 ? Math.round((usedTokens / tokens.length) * 100) : 0;
-  const usedTokensList = tokens.filter(t => t.isUsed);
-  const unusedTokensList = tokens.filter(t => !t.isUsed);
 
   // Sorting Candidates for Leaderboard
   const sortedCandidates = [...candidates].sort((a, b) => b.votes - a.votes);
@@ -316,6 +370,24 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
       data: chartData
     };
   }, [tokens, candidates, selectedAnalysisBlock]);
+
+  // --- NEW: FILTER LOGIC ---
+  const filteredTokens = useMemo(() => {
+    return tokens.filter(token => {
+       // Filter by Block
+       const matchBlock = filterBlock === 'ALL' || token.voterBlock === filterBlock;
+       
+       // Filter by Status
+       let matchStatus = true;
+       if (filterStatus === 'SUDAH') {
+          matchStatus = token.isUsed === true;
+       } else if (filterStatus === 'BELUM') {
+          matchStatus = token.isUsed === false;
+       }
+
+       return matchBlock && matchStatus;
+    });
+  }, [tokens, filterBlock, filterStatus]);
 
   // --- VIEW: LIVE COUNT MODE (FULLSCREEN DASHBOARD) ---
   if (activeTab === 'live_count') {
@@ -488,7 +560,12 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
             <div className="w-8 h-8 bg-gray-900 rounded-lg flex items-center justify-center text-white font-bold">A</div>
             <h1 className="text-xl font-bold text-gray-800">Admin Panel</h1>
           </div>
-          <Button variant="secondary" onClick={onLogout} className="text-sm">Keluar</Button>
+          <div className="flex gap-3">
+             <Button variant="danger" onClick={handleResetDataClick} disabled={isResetting} className="text-sm bg-red-100 text-red-700 hover:bg-red-200 shadow-none border border-red-200">
+               Reset Data Pemilihan
+             </Button>
+             <Button variant="secondary" onClick={onLogout} className="text-sm">Keluar</Button>
+          </div>
         </div>
         
         {/* Tabs - Updated Navigation */}
@@ -501,14 +578,11 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
               <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse"></span>
               Live Count (TV)
             </button>
+            <button onClick={() => setActiveTab('voters')} className={`py-3 px-1 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'voters' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              Daftar Pemilih (DPT)
+            </button>
             <button onClick={() => setActiveTab('candidates')} className={`py-3 px-1 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'candidates' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
               Kelola Kandidat
-            </button>
-            <button onClick={() => setActiveTab('tokens')} className={`py-3 px-1 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'tokens' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-              Manajemen Token
-            </button>
-            <button onClick={() => setActiveTab('voters')} className={`py-3 px-1 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'voters' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-              Daftar Pemilih
             </button>
           </div>
         </div>
@@ -594,7 +668,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                         { value: 'Blok B', label: 'Blok B' },
                         { value: 'Blok C', label: 'Blok C' },
                         { value: 'Blok D', label: 'Blok D' },
-                        { value: 'Blok E', label: 'Blok E' },
+                        { value: 'PHI', label: 'PHI' },
                       ]}
                       className="bg-white"
                     />
@@ -679,7 +753,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                       { value: 'Blok B', label: 'Blok B' },
                       { value: 'Blok C', label: 'Blok C' },
                       { value: 'Blok D', label: 'Blok D' },
-                      { value: 'Blok E', label: 'Blok E' },
+                      { value: 'PHI', label: 'PHI' },
                     ]}
                   />
                   <Input 
@@ -740,119 +814,197 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
           </div>
         )}
 
-        {/* --- TAB: MANAJEMEN TOKEN (Generator & Unused) --- */}
-        {activeTab === 'tokens' && (
-          <div className="space-y-6">
-            <Card className="p-6">
-               <div className="flex flex-col sm:flex-row items-end gap-4">
-                 <div className="w-full sm:w-auto flex-grow">
-                   <Input 
-                     label="Buat Token Baru (Acak)" 
-                     type="number" 
-                     min="1" 
-                     max="100"
-                     value={tokenAmount}
-                     onChange={(e) => setTokenAmount(parseInt(e.target.value))} 
-                   />
-                 </div>
-                 <Button onClick={handleGenerateTokens} disabled={isGenerating} className="w-full sm:w-auto">
-                   {isGenerating ? 'Membuat...' : 'Generate Token'}
-                 </Button>
-               </div>
-            </Card>
-
-            <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-gray-700 flex items-center gap-2">
-                    <span className="w-3 h-3 bg-green-500 rounded-full"></span>
-                    Token Tersedia (Siap Dibagikan)
-                  </h3>
-                  <div className="flex gap-2">
-                     <Button variant="secondary" onClick={handlePrintTokens} className="text-xs h-8">
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
-                        Cetak Token (PDF)
-                     </Button>
-                     <span className="bg-gray-200 text-gray-700 text-xs px-2 py-1 rounded-full font-bold flex items-center">{unusedTokensList.length}</span>
-                  </div>
-                </div>
-                
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden max-h-96 overflow-y-auto">
-                   <table className="w-full text-left text-sm">
-                      <thead className="bg-green-50 border-b border-green-100 sticky top-0">
-                        <tr>
-                          <th className="px-6 py-4 font-semibold text-green-800">Kode Token</th>
-                          <th className="px-6 py-4 font-semibold text-green-800 text-right">Dibuat Pada</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {unusedTokensList.map((token) => (
-                          <tr key={token.id} className="hover:bg-green-50/50">
-                             <td className="px-6 py-4 font-mono text-2xl font-bold text-gray-700 tracking-widest">
-                                {token.id}
-                             </td>
-                             <td className="px-6 py-4 text-right text-gray-400 text-sm">
-                                {new Date(token.generatedAt).toLocaleDateString()}
-                             </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                   </table>
-                </div>
-            </div>
-          </div>
-        )}
-
-        {/* --- TAB: DAFTAR PEMILIH (Used Tokens) --- */}
+        {/* --- TAB: DAFTAR PEMILIH (DPT & TOKENS) --- */}
         {activeTab === 'voters' && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
-                Daftar Riwayat Pemilih
-              </h3>
-              <div className="flex gap-2 items-center">
-                 <Button variant="secondary" onClick={handleExportCSV} className="text-xs h-8">
-                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    Export CSV
-                 </Button>
-                 <Badge type="neutral">Total: {usedTokensList.length} Suara</Badge>
-              </div>
-            </div>
-
-            <Card className="p-0 overflow-hidden">
-               <div className="overflow-x-auto">
-                 <table className="w-full text-left text-sm">
-                    <thead className="bg-blue-50 border-b border-blue-100">
-                      <tr>
-                        <th className="px-6 py-4 font-semibold text-blue-900">Nama Pemilih</th>
-                        <th className="px-6 py-4 font-semibold text-blue-900">Blok Rumah</th>
-                        <th className="px-6 py-4 font-semibold text-blue-900">Token Digunakan</th>
-                        <th className="px-6 py-4 font-semibold text-blue-900 text-right">Waktu Memilih</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {usedTokensList.map((token) => (
-                        <tr key={token.id} className="hover:bg-blue-50/30 transition-colors">
-                           <td className="px-6 py-4 font-medium text-gray-900">
-                              {token.voterName || 'Anonim'}
-                           </td>
-                           <td className="px-6 py-4 text-gray-600">
-                              <span className="px-2 py-1 bg-gray-100 rounded text-xs font-bold border border-gray-200">{token.voterBlock}</span>
-                           </td>
-                           <td className="px-6 py-4 font-mono text-gray-500">
-                              {token.id}
-                           </td>
-                           <td className="px-6 py-4 text-right text-gray-500">
-                              {token.usedAt ? new Date(token.usedAt).toLocaleString() : '-'}
-                           </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                 </table>
+            <div className="flex flex-col md:flex-row gap-6">
+               {/* FORM REGISTRASI PEMILIH */}
+               <div className="w-full md:w-1/3">
+                  <Card className="sticky top-24 border-t-4 border-green-600">
+                     <h3 className="text-lg font-bold text-gray-800 mb-4">Input Pemilih Tetap (DPT)</h3>
+                     <p className="text-xs text-gray-500 mb-4">Sistem akan membuat token unik untuk setiap nama yang didaftarkan.</p>
+                     <form onSubmit={handleRegisterVoter} className="space-y-4">
+                        <Input 
+                           label="Nama Lengkap Warga" 
+                           placeholder="Budi Santoso"
+                           value={newVoterName}
+                           onChange={(e) => setNewVoterName(e.target.value)}
+                           required
+                        />
+                        <Select 
+                           label="Blok Rumah"
+                           value={newVoterBlock}
+                           onChange={(e) => setNewVoterBlock(e.target.value)}
+                           options={[
+                              { value: 'Blok A', label: 'Blok A' },
+                              { value: 'Blok B', label: 'Blok B' },
+                              { value: 'Blok C', label: 'Blok C' },
+                              { value: 'Blok D', label: 'Blok D' },
+                              { value: 'PHI', label: 'PHI' },
+                           ]}
+                        />
+                        <Button type="submit" variant="primary" className="w-full bg-green-600 hover:bg-green-700" isLoading={isRegistering}>
+                           {isRegistering ? 'Menyimpan...' : 'Simpan & Buat Token'}
+                        </Button>
+                     </form>
+                  </Card>
                </div>
-            </Card>
+
+               {/* TABEL DPT */}
+               <div className="w-full md:w-2/3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                     <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <span className="w-3 h-3 bg-blue-500 rounded-full"></span>
+                        Daftar Pemilih & Status
+                     </h3>
+                     <div className="flex gap-2 items-center self-end">
+                        <Button variant="secondary" onClick={handlePrintTokens} className="text-xs h-8">
+                           Cetak Token
+                        </Button>
+                        <Button variant="secondary" onClick={handleExportCSV} className="text-xs h-8">
+                           Export CSV
+                        </Button>
+                     </div>
+                  </div>
+
+                  {/* FILTER BAR */}
+                  <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4 flex flex-col sm:flex-row gap-4 items-end">
+                    <div className="w-full sm:w-1/3">
+                      <Select 
+                        label="Filter Blok"
+                        value={filterBlock}
+                        onChange={(e) => setFilterBlock(e.target.value)}
+                        options={[
+                          { value: 'ALL', label: 'Semua Blok' },
+                          { value: 'Blok A', label: 'Blok A' },
+                          { value: 'Blok B', label: 'Blok B' },
+                          { value: 'Blok C', label: 'Blok C' },
+                          { value: 'Blok D', label: 'Blok D' },
+                          { value: 'PHI', label: 'PHI' },
+                        ]}
+                      />
+                    </div>
+                    <div className="w-full sm:w-1/3">
+                      <Select 
+                        label="Filter Status"
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value)}
+                        options={[
+                          { value: 'ALL', label: 'Semua Status' },
+                          { value: 'SUDAH', label: 'Sudah Memilih' },
+                          { value: 'BELUM', label: 'Belum Memilih' },
+                        ]}
+                      />
+                    </div>
+                     <div className="w-full sm:w-1/3">
+                         <Badge type="neutral">Menampilkan: {filteredTokens.length} dari {tokens.length} data</Badge>
+                     </div>
+                  </div>
+
+                  <Card className="p-0 overflow-hidden">
+                     <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                        <table className="w-full text-left text-sm relative">
+                           <thead className="bg-gray-100 border-b border-gray-200 sticky top-0 z-10">
+                              <tr>
+                                 <th className="px-6 py-4 font-semibold text-gray-700">Nama Pemilih</th>
+                                 <th className="px-6 py-4 font-semibold text-gray-700">Blok</th>
+                                 <th className="px-6 py-4 font-semibold text-gray-700">Token</th>
+                                 <th className="px-6 py-4 font-semibold text-gray-700">Status</th>
+                                 <th className="px-6 py-4 text-right">Aksi</th>
+                              </tr>
+                           </thead>
+                           <tbody className="divide-y divide-gray-100">
+                              {filteredTokens.length === 0 && (
+                                 <tr>
+                                    <td colSpan={5} className="p-8 text-center text-gray-400">
+                                       {tokens.length === 0 ? "Belum ada pemilih terdaftar." : "Tidak ada data yang cocok dengan filter."}
+                                    </td>
+                                 </tr>
+                              )}
+                              {filteredTokens.map((token) => (
+                                 <tr key={token.id} className="hover:bg-gray-50/50 transition-colors">
+                                    <td className="px-6 py-3 font-medium text-gray-900">
+                                       {token.voterName || 'Anonim'}
+                                    </td>
+                                    <td className="px-6 py-3 text-gray-600">
+                                       <span className="px-2 py-1 bg-gray-100 rounded text-xs font-bold border border-gray-200">{token.voterBlock}</span>
+                                    </td>
+                                    <td className="px-6 py-3 font-mono text-gray-500 tracking-wider">
+                                       {token.id}
+                                    </td>
+                                    <td className="px-6 py-3">
+                                       {token.isUsed ? (
+                                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                             Sudah Memilih
+                                          </span>
+                                       ) : (
+                                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                             Belum Memilih
+                                          </span>
+                                       )}
+                                    </td>
+                                    <td className="px-6 py-3 text-right">
+                                       <button onClick={() => handleDeleteTokenClick(token)} className="text-red-400 hover:text-red-600">
+                                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                       </button>
+                                    </td>
+                                 </tr>
+                              ))}
+                           </tbody>
+                        </table>
+                     </div>
+                  </Card>
+               </div>
+            </div>
           </div>
         )}
+        
+        {/* --- MODAL CONFIRMATION RESET DATA --- */}
+        <Modal
+           isOpen={showResetModal}
+           title="⚠️ Konfirmasi Reset Total"
+           onClose={() => setShowResetModal(false)}
+           onConfirm={confirmResetData}
+           confirmText="YA, HAPUS SEMUA"
+           cancelText="Batal"
+           isProcessing={isResetting}
+        >
+           <div className="text-center p-2">
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full mx-auto flex items-center justify-center mb-4">
+                 <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+              </div>
+              <h4 className="text-lg font-bold text-gray-900 mb-2">Anda yakin ingin mereset pemilihan?</h4>
+              <p className="text-sm text-gray-600 mb-4">
+                 Tindakan ini akan <strong>MENGHAPUS SEMUA DATA PEMILIH (DPT)</strong> dan mereset skor suara kandidat menjadi 0.
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded p-3 text-xs text-red-800 font-bold">
+                 Data yang dihapus tidak dapat dikembalikan.
+              </div>
+           </div>
+        </Modal>
+
+        {/* --- MODAL CONFIRMATION DELETE TOKEN --- */}
+        <Modal
+           isOpen={!!tokenToDelete}
+           title="Hapus Data Pemilih"
+           onClose={() => setTokenToDelete(null)}
+           onConfirm={confirmDeleteToken}
+           confirmText="Hapus"
+           cancelText="Batal"
+           isProcessing={isDeletingToken}
+        >
+           {tokenToDelete && (
+             <div className="text-center">
+                <p className="text-gray-600 mb-2">Anda akan menghapus data pemilih:</p>
+                <div className="bg-gray-100 p-3 rounded font-bold text-gray-800 mb-4">
+                   {tokenToDelete.voterName} ({tokenToDelete.voterBlock})
+                </div>
+                <p className="text-xs text-red-500">
+                   Token akses <strong>{tokenToDelete.id}</strong> tidak akan bisa digunakan lagi.
+                </p>
+             </div>
+           )}
+        </Modal>
 
       </main>
     </div>
