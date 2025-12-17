@@ -10,19 +10,20 @@ service cloud.firestore {
 
     // Aturan untuk Koleksi Candidates
     match /candidates/{candidateId} {
-      // Siapapun boleh membaca data kandidat (agar bisa tampil di halaman user)
       allow read: if true;
-      // Hanya user yang sudah 'login' (token masuk) yang boleh update (tambah suara)
-      // Admin juga butuh ini untuk create/delete
       allow create, update, delete: if isAuthenticated();
     }
 
     // Aturan untuk Koleksi Tokens
     match /tokens/{tokenId} {
-      // Siapapun boleh membaca (untuk validasi awal di halaman login)
       allow read: if true;
-      // PERBAIKAN: Menambahkan 'delete' agar admin bisa menghapus data pemilih
       allow create, update, delete: if isAuthenticated();
+    }
+
+    // Aturan untuk Pengaturan Jadwal (Specific Match)
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
     }
   }
 }

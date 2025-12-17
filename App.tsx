@@ -1,10 +1,53 @@
 
 import React, { useState, useEffect } from 'react';
-import { validateToken, initAuth } from './services/firebase';
+import { validateToken, initAuth, subscribeToElectionConfig } from './services/firebase';
 import { Button, Input, Card, Select } from './components/UIComponents';
 import { UserVoting } from './components/UserVoting';
 import { AdminDashboard } from './components/AdminDashboard';
-import { TokenData } from './types';
+import { TokenData, ElectionConfig } from './types';
+
+// --- HELPER COMPONENT: TYPOGRAPHY COUNTDOWN ---
+const CountdownTimer: React.FC<{ targetDate: number }> = ({ targetDate }) => {
+  const [timeLeft, setTimeLeft] = useState(targetDate - Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimeLeft(targetDate - Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [targetDate]);
+
+  if (timeLeft < 0) return null;
+
+  const hours = Math.floor((timeLeft / (1000 * 60 * 60)));
+  const minutes = Math.floor((timeLeft / (1000 * 60)) % 60);
+  const seconds = Math.floor((timeLeft / 1000) % 60);
+
+  // Pad numbers with 0
+  const h = hours < 10 ? `0${hours}` : hours;
+  const m = minutes < 10 ? `0${minutes}` : minutes;
+  const s = seconds < 10 ? `0${seconds}` : seconds;
+
+  return (
+    <div className="flex flex-col items-center justify-center my-8">
+       {/* Angka Besar */}
+       <div className="text-6xl sm:text-8xl font-black font-mono tracking-tighter text-slate-900 leading-none tabular-nums">
+          {h}
+          <span className="text-slate-300 animate-pulse mx-1">:</span>
+          {m}
+          <span className="text-slate-300 animate-pulse mx-1">:</span>
+          {s}
+       </div>
+       
+       {/* Label Bawah */}
+       <div className="flex w-full justify-between px-2 mt-2 max-w-[18rem] sm:max-w-[24rem]">
+          <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest text-center w-1/3">Jam</span>
+          <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest text-center w-1/3 pl-2">Menit</span>
+          <span className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest text-center w-1/3 pl-4">Detik</span>
+       </div>
+    </div>
+  );
+};
 
 // --- COMPONENT: USER PAGE (Home) ---
 interface UserPageProps {
@@ -22,6 +65,42 @@ const UserPage: React.FC<UserPageProps> = ({ onGoToAdmin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOpeningBallot, setIsOpeningBallot] = useState(false);
+
+  // --- ELECTION TIME STATE ---
+  const [electionConfig, setElectionConfig] = useState<ElectionConfig | null>(null);
+  const [electionStatus, setElectionStatus] = useState<'loading' | 'active' | 'not_started' | 'ended'>('loading');
+
+  useEffect(() => {
+    // Subscribe to time settings
+    const unsubscribe = subscribeToElectionConfig((config) => {
+       setElectionConfig(config);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Check time interval
+  useEffect(() => {
+    const checkTime = () => {
+       if (!electionConfig) {
+          // If no config set, assume open (default behavior)
+          setElectionStatus('active'); 
+          return;
+       }
+       const now = Date.now();
+       if (now < electionConfig.startTime) {
+          setElectionStatus('not_started');
+       } else if (now > electionConfig.endTime) {
+          setElectionStatus('ended');
+       } else {
+          setElectionStatus('active');
+       }
+    };
+
+    checkTime(); // Initial check
+    const interval = setInterval(checkTime, 1000); // Re-check every second
+    return () => clearInterval(interval);
+  }, [electionConfig]);
+
 
   // Step 1: Validate Token & Fetch Voter Data
   const handleCheckToken = async (e: React.FormEvent) => {
@@ -123,113 +202,197 @@ const UserPage: React.FC<UserPageProps> = ({ onGoToAdmin }) => {
     );
   }
 
-  // --- VIEW: CONFIRMATION MODAL (INTERMEDIATE) ---
-  if (showConfirmation && confirmedVoter) {
-     return (
-        <div className="min-h-screen bg-gray-900/50 flex items-center justify-center p-4 backdrop-blur-sm z-50">
-           <Card className="w-full max-w-md animate-scale-in">
-              <div className="text-center mb-6">
-                 <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full mx-auto flex items-center justify-center mb-4">
-                    <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                 </div>
-                 <h2 className="text-xl font-bold text-gray-900">Konfirmasi Identitas</h2>
-                 <p className="text-gray-500 text-sm mt-1">Apakah data di bawah ini benar Anda?</p>
-              </div>
-              
-              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6 space-y-3">
-                 <div className="flex justify-between border-b border-gray-200 pb-2">
-                    <span className="text-gray-500 text-sm">Nama Pemilih</span>
-                    <span className="font-bold text-gray-900">{confirmedVoter.voterName}</span>
-                 </div>
-                 <div className="flex justify-between">
-                    <span className="text-gray-500 text-sm">Blok Rumah</span>
-                    <span className="font-bold text-gray-900">{confirmedVoter.voterBlock}</span>
-                 </div>
-              </div>
-
-              <div className="space-y-3">
-                 <Button onClick={handleConfirmIdentity} className="w-full py-3 text-lg">
-                    Ya, Ini Saya (Lanjut)
-                 </Button>
-                 <Button variant="secondary" onClick={handleCancelIdentity} className="w-full">
-                    Bukan, Batalkan
-                 </Button>
-              </div>
-           </Card>
-           <style>{`
-             @keyframes scale-in {
-                0% { transform: scale(0.9); opacity: 0; }
-                100% { transform: scale(1); opacity: 1; }
-             }
-             .animate-scale-in { animation: scale-in 0.2s ease-out forwards; }
-           `}</style>
-        </div>
-     );
-  }
-
-  // --- VIEW: LOGIN FORM ---
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex flex-col items-center justify-center p-4 relative">
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-10 pointer-events-none">
-        <div className="absolute top-[-10%] right-[-5%] w-96 h-96 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob"></div>
-        <div className="absolute bottom-[-10%] left-[-5%] w-96 h-96 bg-purple-400 rounded-full mix-blend-multiply filter blur-3xl opacity-70 animate-blob animation-delay-2000"></div>
-      </div>
+  // --- BACKGROUND WRAPPER ---
+  const BackgroundWrapper: React.FC<{children: React.ReactNode, theme?: 'default' | 'dark'}> = ({children, theme = 'default'}) => (
+    <div className={`min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans ${theme === 'dark' ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'}`}>
       
-      {/* Tombol Admin di Pojok Kanan Atas */}
-      <div className="absolute top-4 right-4 z-50">
+      {/* Admin Button */}
+      <div className="absolute top-4 right-4 z-40">
         <button 
           onClick={onGoToAdmin}
-          className="bg-white/50 backdrop-blur-sm hover:bg-white text-gray-600 px-4 py-2 rounded-full text-xs font-bold shadow-sm border border-white/60 transition-all flex items-center gap-2"
+          className={`px-3 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase border transition-all flex items-center gap-1 ${theme === 'dark' ? 'text-slate-500 border-slate-700 hover:text-white' : 'text-slate-400 border-slate-200 hover:text-slate-800'}`}
         >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-          Admin Login
+          Admin
         </button>
       </div>
 
-      <div className="w-full max-w-lg z-10">
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-extrabold text-gray-900 mb-2 tracking-tight select-none cursor-default">
-            E-Voting RT
-          </h1>
-          <p className="text-lg text-gray-700 font-medium">Sistem Pemilihan Ketua RT yang Jujur & Transparan</p>
-        </div>
-        <Card className="shadow-xl border-0">
-          <form onSubmit={handleCheckToken} className="space-y-6">
-            
-            <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-4 flex items-start gap-3">
-               <svg className="w-6 h-6 text-blue-600 mt-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-               <div className="text-sm text-blue-800">
-                  <p className="font-bold">Petunjuk:</p>
-                  <p>Masukkan kode token unik yang telah diberikan panitia. Sistem akan memverifikasi nama anda otomatis.</p>
-               </div>
-            </div>
+      <div className="w-full max-w-lg z-10 relative">
+         {children}
+      </div>
+    </div>
+  );
 
-            <div>
-              <label className="block text-sm font-bold text-gray-800 mb-2">Token Pemilihan</label>
-              <input
-                type="text"
-                className="w-full px-4 py-4 text-center text-3xl font-mono tracking-widest border-2 border-gray-300 rounded-xl focus:ring-4 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all uppercase placeholder-gray-300 bg-white text-gray-900"
-                placeholder="XXXXXX"
-                maxLength={6}
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value.toUpperCase())}
-              />
+  // --- VIEW: STATUS "NOT STARTED" (SIMPLE TYPOGRAPHY) ---
+  if (electionStatus === 'not_started') {
+     return (
+        <BackgroundWrapper>
+           <div className="flex flex-col items-center text-center">
+             
+             {/* Header */}
+             <div className="mb-8">
+               <h2 className="text-xs font-bold text-blue-600 tracking-[0.3em] uppercase mb-2">Agenda Pemilihan RT</h2>
+               <h1 className="text-3xl sm:text-4xl font-black text-slate-800 leading-tight">
+                 BELUM<br/>DIMULAI
+               </h1>
+             </div>
+
+             {/* Timer */}
+             {electionConfig && (
+                <div className="w-full">
+                   <p className="text-sm text-slate-500 font-medium">Kotak suara dibuka dalam:</p>
+                   <CountdownTimer targetDate={electionConfig.startTime} />
+                   
+                   <div className="mt-8 pt-8 border-t border-slate-100 w-3/4 mx-auto">
+                      <div className="text-xs text-slate-400 font-mono mb-1">JADWAL PEMBUKAAN</div>
+                      <div className="text-lg font-bold text-slate-800">
+                         {new Date(electionConfig.startTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} <span className="text-xs text-slate-500 font-normal">WIB</span>
+                      </div>
+                      <div className="text-sm text-slate-500">
+                         {new Date(electionConfig.startTime).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}
+                      </div>
+                   </div>
+                </div>
+             )}
+
+             <div className="mt-16 text-[10px] text-slate-300">
+                Sistem E-Voting Digital
+             </div>
+           </div>
+        </BackgroundWrapper>
+     )
+  }
+
+  // --- VIEW: STATUS "ENDED" (SIMPLE TYPOGRAPHY - LIGHT MODE) ---
+  if (electionStatus === 'ended') {
+     return (
+        <BackgroundWrapper>
+           <div className="flex flex-col items-center text-center">
+             
+             {/* Header */}
+             <div className="mb-8">
+               <h2 className="text-xs font-bold text-red-600 tracking-[0.3em] uppercase mb-2">Sesi Pemilihan</h2>
+               <h1 className="text-3xl sm:text-4xl font-black text-slate-800 leading-tight">
+                 SUDAH<br/>DITUTUP
+               </h1>
+             </div>
+             
+             {/* Content Body */}
+             <div className="w-full px-4">
+               <p className="text-sm text-slate-500 font-medium max-w-xs mx-auto leading-relaxed">
+                  Terima kasih atas partisipasi Anda.<br/>
+                  Proses pemungutan suara telah berakhir.
+               </p>
+
+               <div className="mt-12 w-full max-w-[200px] mx-auto border-t border-b border-slate-100 py-6">
+                  <div className="flex items-center justify-center gap-3 text-xs font-bold text-slate-600 tracking-wide">
+                     <span className="flex h-3 w-3 relative">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-600"></span>
+                     </span>
+                     REKAPITULASI DATA
+                  </div>
+               </div>
+             </div>
+
+             <div className="mt-16 text-[10px] text-slate-300">
+                Sistem E-Voting Digital
+             </div>
+
+           </div>
+        </BackgroundWrapper>
+     )
+  }
+
+  // --- VIEW: ACTIVE (LOGIN FORM) ---
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
+        
+        {/* Background Accent */}
+        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-600 to-indigo-600"></div>
+
+        <div className="w-full max-w-md z-10">
+          <div className="text-center mb-10">
+            <h2 className="text-xs font-bold text-blue-600 tracking-[0.2em] uppercase mb-2">Selamat Datang</h2>
+            <h1 className="text-3xl font-black text-slate-900 tracking-tight">E-VOTING RT</h1>
+            <p className="text-sm text-slate-500 mt-2">Silakan masuk untuk menggunakan hak pilih.</p>
+          </div>
+          
+          <Card className="shadow-xl shadow-blue-900/5 border-0 rounded-2xl overflow-hidden">
+            <form onSubmit={handleCheckToken} className="space-y-6">
+              
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider text-center">Masukkan Kode Token</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-5 text-center text-4xl font-mono font-bold tracking-[0.2em] border-2 border-slate-100 rounded-xl focus:ring-0 focus:border-blue-500 outline-none transition-all uppercase placeholder-slate-200 text-slate-800 bg-slate-50/50"
+                  placeholder="••••••"
+                  maxLength={6}
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value.toUpperCase())}
+                />
+              </div>
+
               {error && (
-                <div className="mt-3 bg-red-50 text-red-700 px-4 py-2 rounded-lg text-sm flex items-center border border-red-100 font-medium animate-pulse">
-                   <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-                   {error}
+                <div className="text-center">
+                  <span className="inline-block bg-red-50 text-red-600 px-3 py-1 rounded text-xs font-bold border border-red-100 animate-pulse">
+                     {error}
+                  </span>
                 </div>
               )}
-            </div>
-            <Button type="submit" className="w-full py-4 text-lg shadow-lg shadow-blue-500/30" isLoading={loading}>
-              Verifikasi Token
-            </Button>
-          </form>
-        </Card>
-        <p className="text-center text-gray-500 text-xs mt-8 font-medium">
-          &copy; 2024 Panitia Pemilihan RT. Gunakan hak pilih anda.
-        </p>
-      </div>
+              
+              <Button type="submit" className="w-full py-4 text-base font-bold bg-slate-900 hover:bg-black text-white rounded-xl shadow-lg transition-transform active:scale-[0.98]" isLoading={loading}>
+                MASUK BILIK SUARA
+              </Button>
+            </form>
+          </Card>
+
+          <div className="text-center mt-8">
+             <button onClick={onGoToAdmin} className="text-xs text-slate-300 hover:text-slate-500 transition-colors font-medium">
+                Admin Panel Login
+             </button>
+          </div>
+        </div>
+
+      {/* --- CONFIRMATION MODAL OVERLAY --- */}
+      {showConfirmation && confirmedVoter && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+           <div 
+             className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm transition-opacity"
+             onClick={handleCancelIdentity}
+           ></div>
+           
+           <div className="relative z-10 w-full max-w-sm animate-scale-in bg-white rounded-2xl shadow-2xl overflow-hidden">
+                <div className="bg-slate-50 p-6 text-center border-b border-slate-100">
+                   <div className="w-16 h-16 bg-white text-blue-600 rounded-full mx-auto flex items-center justify-center font-bold text-2xl shadow-sm border border-slate-100 mb-3">
+                      {confirmedVoter.voterName?.charAt(0)}
+                   </div>
+                   <h2 className="text-lg font-bold text-slate-800">Verifikasi Data</h2>
+                </div>
+                
+                <div className="p-6 text-center">
+                   <div className="mb-6">
+                      <div className="text-xs text-slate-400 uppercase font-bold mb-1">Nama Pemilih</div>
+                      <div className="text-xl font-bold text-slate-900">{confirmedVoter.voterName}</div>
+                      <div className="text-sm text-slate-500 mt-1 bg-slate-100 inline-block px-2 py-0.5 rounded">{confirmedVoter.voterBlock}</div>
+                   </div>
+
+                   <div className="space-y-3">
+                      <Button onClick={handleConfirmIdentity} className="w-full py-3 bg-blue-600 hover:bg-blue-700 font-bold">
+                         BENAR, LANJUT
+                      </Button>
+                      <button onClick={handleCancelIdentity} className="w-full py-2 text-sm text-slate-400 font-medium hover:text-slate-600">
+                         Bukan Saya
+                      </button>
+                   </div>
+                </div>
+           </div>
+           <style>{`
+             @keyframes scale-in { 0% { transform: scale(0.95); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+             .animate-scale-in { animation: scale-in 0.15s ease-out forwards; }
+           `}</style>
+        </div>
+      )}
+
     </div>
   );
 };

@@ -18,7 +18,7 @@ import {
   getDocs     // Added
 } from "firebase/firestore";
 import { getAuth, signInAnonymously } from "firebase/auth";
-import { Candidate, TokenData } from "../types";
+import { Candidate, TokenData, ElectionConfig } from "../types";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAt0sDHF4TptOxpg62NwmP1KfE4206LICY",
@@ -49,6 +49,33 @@ export const initAuth = async () => {
     }
   }
 };
+
+// --- ELECTION CONFIG (SCHEDULE) SERVICES ---
+
+export const subscribeToElectionConfig = (callback: (data: ElectionConfig | null) => void) => {
+  const docRef = doc(db, "settings", "electionConfig");
+  return onSnapshot(docRef, (docSnap) => {
+    if (docSnap.exists()) {
+      callback(docSnap.data() as ElectionConfig);
+    } else {
+      callback(null); // Belum disetting
+    }
+  }, (error) => {
+    // Suppress permission denied error if rules are not yet propagated or set
+    if (error.code === 'permission-denied') {
+       console.warn("Could not read election settings (Permission Denied). Using default 'Open' state. Please check firestore.rules.");
+       callback(null);
+    } else {
+       console.error("Error subscribing to config:", error);
+    }
+  });
+};
+
+export const updateElectionConfig = async (config: ElectionConfig) => {
+  const docRef = doc(db, "settings", "electionConfig");
+  await setDoc(docRef, config); // Gunakan setDoc agar kalau belum ada dibuat baru
+};
+
 
 // --- CANDIDATE SERVICES ---
 

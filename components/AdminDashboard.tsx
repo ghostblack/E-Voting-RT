@@ -14,7 +14,7 @@ import {
   Pie, 
   Legend
 } from 'recharts';
-import { Candidate, TokenData } from '../types';
+import { Candidate, TokenData, ElectionConfig } from '../types';
 import { 
   subscribeToCandidates, 
   subscribeToTokens, 
@@ -23,7 +23,9 @@ import {
   updateCandidateData,
   deleteCandidate,
   deleteToken,
-  resetElectionData
+  resetElectionData,
+  updateElectionConfig, // Added
+  subscribeToElectionConfig // Added
 } from '../services/firebase';
 import { Button, Input, Card, Badge, Select, Modal } from './UIComponents';
 
@@ -56,9 +58,10 @@ const BarImageLabel = (props: any) => {
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
 export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState<'results' | 'candidates' | 'voters' | 'live_count'>('results');
+  const [activeTab, setActiveTab] = useState<'results' | 'candidates' | 'voters' | 'live_count' | 'settings'>('results');
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [tokens, setTokens] = useState<TokenData[]>([]);
+  const [electionConfig, setElectionConfig] = useState<ElectionConfig | null>(null);
   
   // State untuk melacak ID kandidat yang suaranya baru saja bertambah (untuk animasi)
   const [flashingCandidates, setFlashingCandidates] = useState<Record<string, boolean>>({});
@@ -81,6 +84,12 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   const [newVoterBlock, setNewVoterBlock] = useState('Blok A');
   const [isRegistering, setIsRegistering] = useState(false);
 
+  // --- SETTINGS FORM STATE ---
+  const [startTimeInput, setStartTimeInput] = useState('');
+  const [endTimeInput, setEndTimeInput] = useState('');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
   // --- MODAL STATES ---
   const [isResetting, setIsResetting] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -95,9 +104,24 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   useEffect(() => {
     const unsubC = subscribeToCandidates(setCandidates);
     const unsubT = subscribeToTokens(setTokens);
+    const unsubS = subscribeToElectionConfig((config) => {
+       setElectionConfig(config);
+       if (config) {
+         // Convert timestamp to input datetime-local format (YYYY-MM-DDTHH:mm)
+         const toLocalISO = (ts: number) => {
+            const d = new Date(ts);
+            const pad = (n: number) => n < 10 ? '0'+n : n;
+            return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+         };
+         setStartTimeInput(toLocalISO(config.startTime));
+         setEndTimeInput(toLocalISO(config.endTime));
+       }
+    });
+
     return () => {
       unsubC();
       unsubT();
+      unsubS();
     };
   }, []);
 
@@ -204,6 +228,40 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     }
   };
 
+  // --- SETTINGS LOGIC ---
+  const handleSaveSettings = async (e: React.FormEvent) => {
+     e.preventDefault();
+     setSaveStatus('idle');
+
+     if (!startTimeInput || !endTimeInput) {
+        alert("Mohon isi waktu mulai dan selesai.");
+        return;
+     }
+     
+     const startTs = new Date(startTimeInput).getTime();
+     const endTs = new Date(endTimeInput).getTime();
+
+     if (endTs <= startTs) {
+        alert("Waktu Selesai harus lebih besar dari Waktu Mulai.");
+        return;
+     }
+
+     setIsSavingSettings(true);
+     try {
+        await updateElectionConfig({ startTime: startTs, endTime: endTs });
+        setSaveStatus('success');
+        
+        // Hide success message after 3 seconds
+        setTimeout(() => setSaveStatus('idle'), 3000);
+     } catch(e: any) {
+        setSaveStatus('error');
+        alert("Gagal menyimpan jadwal: " + e.message);
+     } finally {
+        setIsSavingSettings(false);
+     }
+  };
+
+
   // --- RESET DATA LOGIC (NOW WITH MODAL) ---
   const handleResetDataClick = () => {
     setShowResetModal(true);
@@ -216,7 +274,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
       setShowResetModal(false);
       
       if (result.success) {
-         // Optional: Toast message here
          console.log("Reset Success");
       } else {
          alert("Gagal mereset data: " + result.message);
@@ -231,7 +288,6 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     await registerVoter(newVoterName, newVoterBlock);
     setIsRegistering(false);
     setNewVoterName('');
-    // Block remains same for easier bulk input
   };
 
   // --- DELETE TOKEN LOGIC (NOW WITH MODAL) ---
@@ -584,6 +640,9 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
             <button onClick={() => setActiveTab('candidates')} className={`py-3 px-1 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'candidates' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
               Kelola Kandidat
             </button>
+            <button onClick={() => setActiveTab('settings')} className={`py-3 px-1 font-medium text-sm border-b-2 transition-colors whitespace-nowrap ${activeTab === 'settings' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              Pengaturan Jadwal
+            </button>
           </div>
         </div>
       </header>
@@ -716,6 +775,116 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
             </div>
 
           </div>
+        )}
+
+        {/* --- TAB: SETTINGS --- */}
+        {activeTab === 'settings' && (
+           <div className="max-w-2xl mx-auto space-y-6">
+              
+              {/* Status Banner Realtime */}
+              <div className="grid grid-cols-1">
+                 {(() => {
+                    if (!electionConfig) {
+                        return (
+                           <div className="bg-gray-100 border-l-4 border-gray-500 p-4 rounded shadow-sm">
+                              <p className="font-bold text-gray-700">Status: Belum Dikonfigurasi</p>
+                              <p className="text-sm text-gray-500">Silakan atur waktu mulai dan selesai di bawah.</p>
+                           </div>
+                        );
+                    }
+                    const now = Date.now();
+                    if (now < electionConfig.startTime) {
+                        return (
+                           <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded shadow-sm flex items-center gap-3">
+                              <div className="text-yellow-600 bg-yellow-100 p-2 rounded-full">
+                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                              </div>
+                              <div>
+                                 <p className="font-bold text-yellow-800">Status: Menunggu Waktu Mulai</p>
+                                 <p className="text-sm text-yellow-700">Warga belum bisa melakukan voting.</p>
+                              </div>
+                           </div>
+                        );
+                    } else if (now > electionConfig.endTime) {
+                        return (
+                           <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded shadow-sm flex items-center gap-3">
+                              <div className="text-red-600 bg-red-100 p-2 rounded-full">
+                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                              </div>
+                              <div>
+                                 <p className="font-bold text-red-800">Status: Selesai / Ditutup</p>
+                                 <p className="text-sm text-red-700">Voting telah ditutup. Warga tidak bisa akses.</p>
+                              </div>
+                           </div>
+                        );
+                    } else {
+                        return (
+                           <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded shadow-sm flex items-center gap-3">
+                              <div className="text-green-600 bg-green-100 p-2 rounded-full animate-pulse">
+                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
+                              </div>
+                              <div>
+                                 <p className="font-bold text-green-800">Status: SEDANG BERLANGSUNG</p>
+                                 <p className="text-sm text-green-700">Voting aktif. Warga dapat memasukkan token.</p>
+                              </div>
+                           </div>
+                        );
+                    }
+                 })()}
+              </div>
+
+              <Card>
+                 <div className="flex items-center gap-3 mb-6 border-b pb-4">
+                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
+                       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    </div>
+                    <div>
+                       <h3 className="text-lg font-bold text-gray-800">Atur Jadwal Pemilihan</h3>
+                       <p className="text-sm text-gray-500">Edit form di bawah untuk mengubah waktu akses.</p>
+                    </div>
+                 </div>
+
+                 {/* SUCCESS NOTIFICATION */}
+                 {saveStatus === 'success' && (
+                    <div className="mb-6 bg-green-100 border border-green-200 text-green-800 px-4 py-3 rounded relative animate-bounce-slight flex items-center">
+                        <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/></svg>
+                        <span className="font-bold">Jadwal Berhasil Disimpan!</span>
+                    </div>
+                 )}
+
+                 <form onSubmit={handleSaveSettings} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                       <Input 
+                          label="Waktu Mulai"
+                          type="datetime-local"
+                          value={startTimeInput}
+                          onChange={(e) => setStartTimeInput(e.target.value)}
+                          required
+                          className="border-gray-300 focus:border-blue-500"
+                       />
+                       <Input 
+                          label="Waktu Selesai"
+                          type="datetime-local"
+                          value={endTimeInput}
+                          onChange={(e) => setEndTimeInput(e.target.value)}
+                          required
+                          className="border-gray-300 focus:border-blue-500"
+                       />
+                    </div>
+                    
+                    <div className="bg-blue-50/50 border border-blue-100 p-4 rounded-lg text-sm text-blue-800">
+                        <h4 className="font-bold mb-1">Catatan:</h4>
+                        <p>Anda dapat mengubah jadwal ini kapan saja. Sistem akan langsung menyesuaikan akses pengguna secara <em>real-time</em>.</p>
+                    </div>
+
+                    <div className="flex justify-end pt-4 border-t mt-4">
+                       <Button type="submit" isLoading={isSavingSettings} className="px-8 shadow-lg bg-blue-600 hover:bg-blue-700">
+                          {isSavingSettings ? 'Menyimpan...' : 'Simpan Perubahan'}
+                       </Button>
+                    </div>
+                 </form>
+              </Card>
+           </div>
         )}
 
         {/* --- TAB: CANDIDATES --- */}

@@ -20,6 +20,11 @@ export interface TokenData {
   candidateId?: string; // ID Kandidat yang dipilih (untuk analisis statistik)
 }
 
+export interface ElectionConfig {
+  startTime: number; // Timestamp milliseconds
+  endTime: number;   // Timestamp milliseconds
+}
+
 export interface VotingState {
   status: 'idle' | 'validating' | 'voting' | 'submitting' | 'success' | 'error';
   message?: string;
