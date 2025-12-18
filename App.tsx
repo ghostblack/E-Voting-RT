@@ -341,7 +341,7 @@ const UserPage: React.FC<UserPageProps> = ({ onGoToAdmin }) => {
               )}
               
               <Button type="submit" className="w-full py-4 text-base font-bold bg-slate-900 hover:bg-black text-white rounded-xl shadow-lg transition-transform active:scale-[0.98]" isLoading={loading}>
-                MASUK BILIK SUARA
+                Verifikasi Token
               </Button>
             </form>
           </Card>

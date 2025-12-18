@@ -14,8 +14,8 @@ import {
   runTransaction,
   deleteDoc,
   increment,
-  writeBatch, // Added
-  getDocs     // Added
+  writeBatch,
+  getDocs
 } from "firebase/firestore";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import { Candidate, TokenData, ElectionConfig } from "../types";
@@ -50,45 +50,33 @@ export const initAuth = async () => {
   }
 };
 
-// --- ELECTION CONFIG (SCHEDULE) SERVICES ---
-
+// --- ELECTION CONFIG SERVICES ---
 export const subscribeToElectionConfig = (callback: (data: ElectionConfig | null) => void) => {
   const docRef = doc(db, "settings", "electionConfig");
   return onSnapshot(docRef, (docSnap) => {
     if (docSnap.exists()) {
       callback(docSnap.data() as ElectionConfig);
     } else {
-      callback(null); // Belum disetting
+      callback(null);
     }
   }, (error) => {
-    // Suppress permission denied error if rules are not yet propagated or set
     if (error.code === 'permission-denied') {
-       console.warn("Could not read election settings (Permission Denied). Using default 'Open' state. Please check firestore.rules.");
        callback(null);
-    } else {
-       console.error("Error subscribing to config:", error);
     }
   });
 };
 
 export const updateElectionConfig = async (config: ElectionConfig) => {
   const docRef = doc(db, "settings", "electionConfig");
-  await setDoc(docRef, config); // Gunakan setDoc agar kalau belum ada dibuat baru
+  await setDoc(docRef, config);
 };
 
-
 // --- CANDIDATE SERVICES ---
-
 export const subscribeToCandidates = (callback: (data: Candidate[]) => void) => {
   const q = query(collection(db, "candidates"), orderBy("noUrut", "asc"));
   return onSnapshot(q, (snapshot) => {
     const candidates = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Candidate));
     callback(candidates);
-  }, (error) => {
-    console.error("Error subscribing to candidates:", error);
-    if (error.code === 'permission-denied') {
-        console.warn("Permission denied. Salin rules dari file 'firestore.rules' ke Firebase Console.");
-    }
   });
 };
 
@@ -109,9 +97,8 @@ export const deleteCandidate = async (id: string) => {
 };
 
 // --- TOKEN & VOTER SERVICES ---
-
 export const generateUniqueToken = (): string => {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // No I, 1, O, 0 to avoid confusion
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let result = '';
   for (let i = 0; i < 6; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -119,12 +106,9 @@ export const generateUniqueToken = (): string => {
   return result;
 };
 
-// NEW: Register Voter (DPT)
 export const registerVoter = async (name: string, block: string) => {
   const tokenStr = generateUniqueToken();
   const tokenRef = doc(db, "tokens", tokenStr);
-  
-  // Create token document predefined with voter info
   await setDoc(tokenRef, {
     id: tokenStr,
     isUsed: false,
@@ -134,17 +118,31 @@ export const registerVoter = async (name: string, block: string) => {
   });
 };
 
-// NEW: Delete Voter/Token
-export const deleteToken = async (tokenId: string) => {
-  try {
-    await deleteDoc(doc(db, "tokens", tokenId));
-  } catch (error: any) {
-    console.error("Error deleting token:", error);
-    if (error.code === 'permission-denied') {
-      throw new Error("Akses ditolak. Cek Firebase Rules.");
-    }
-    throw error;
+// NEW: Batch Registration for Excel Import
+export const registerVotersBatch = async (voters: { name: string, block: string }[]) => {
+  const BATCH_SIZE = 500;
+  for (let i = 0; i < voters.length; i += BATCH_SIZE) {
+    const batch = writeBatch(db);
+    const chunk = voters.slice(i, i + BATCH_SIZE);
+    
+    chunk.forEach(voter => {
+      const tokenStr = generateUniqueToken();
+      const tokenRef = doc(db, "tokens", tokenStr);
+      batch.set(tokenRef, {
+        id: tokenStr,
+        isUsed: false,
+        generatedAt: Date.now(),
+        voterName: voter.name,
+        voterBlock: voter.block
+      });
+    });
+    
+    await batch.commit();
   }
+};
+
+export const deleteToken = async (tokenId: string) => {
+  await deleteDoc(doc(db, "tokens", tokenId));
 };
 
 export const subscribeToTokens = (callback: (data: TokenData[]) => void) => {
@@ -152,15 +150,12 @@ export const subscribeToTokens = (callback: (data: TokenData[]) => void) => {
   return onSnapshot(q, (snapshot) => {
     const tokens = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TokenData));
     callback(tokens);
-  }, (error) => {
-    console.error("Error subscribing to tokens:", error);
   });
 };
 
 // --- RESET DATA SERVICE ---
 export const resetElectionData = async (): Promise<{ success: boolean; message: string }> => {
   try {
-    // 1. Collect ALL operations needed
     const tokensQ = query(collection(db, "tokens"));
     const tokensSnap = await getDocs(tokensQ);
     
@@ -172,68 +167,36 @@ export const resetElectionData = async (): Promise<{ success: boolean; message: 
       ...candidatesSnap.docs.map(d => ({ type: 'update', ref: d.ref, data: { votes: 0 } }))
     ];
 
-    if (operations.length === 0) {
-        return { success: true, message: "Tidak ada data untuk direset." };
-    }
+    if (operations.length === 0) return { success: true, message: "Tidak ada data." };
 
-    // 2. Execute in chunks (Batch Limit is 500)
     const BATCH_SIZE = 500;
     for (let i = 0; i < operations.length; i += BATCH_SIZE) {
         const batch = writeBatch(db);
         const chunk = operations.slice(i, i + BATCH_SIZE);
-        
         chunk.forEach((op: any) => {
-            if (op.type === 'delete') {
-                batch.delete(op.ref);
-            } else {
-                // @ts-ignore
-                batch.update(op.ref, op.data);
-            }
+            if (op.type === 'delete') batch.delete(op.ref);
+            else batch.update(op.ref, op.data);
         });
-        
         await batch.commit();
     }
-
-    return { success: true, message: "Data berhasil direset bersih (DPT dihapus, Suara 0)." };
+    return { success: true, message: "Berhasil direset." };
   } catch (error: any) {
-    console.error("Error resetting data:", error);
-    if (error.code === 'permission-denied') {
-        return { success: false, message: "Gagal: Izin ditolak. Mohon update Firebase Rules untuk mengizinkan DELETE." };
-    }
     return { success: false, message: error.message };
   }
 };
 
 // --- VOTING LOGIC ---
-
-// Updated to return Data if valid
 export const validateToken = async (token: string): Promise<{ valid: boolean; message: string; data?: TokenData }> => {
   try {
     const tokenRef = doc(db, "tokens", token.toUpperCase());
     const tokenSnap = await getDoc(tokenRef);
-
-    if (!tokenSnap.exists()) {
-      return { valid: false, message: "Token tidak ditemukan / tidak terdaftar." };
-    }
-
+    if (!tokenSnap.exists()) return { valid: false, message: "Token tidak ditemukan." };
     const data = tokenSnap.data() as TokenData;
-    
-    // Additional security check: Ensure this token actually has voter data assigned (DPT system)
-    if (!data.voterName) {
-       return { valid: false, message: "Token ini rusak atau belum dikonfigurasi admin." };
-    }
-
-    if (data.isUsed) {
-      return { valid: false, message: `Token ini sudah digunakan oleh ${data.voterName}.` };
-    }
-
+    if (!data.voterName) return { valid: false, message: "Token tidak valid." };
+    if (data.isUsed) return { valid: false, message: `Sudah digunakan oleh ${data.voterName}.` };
     return { valid: true, message: "Token valid.", data: data };
   } catch (error: any) {
-    console.error("Error validating token:", error);
-    if (error.code === 'permission-denied') {
-      return { valid: false, message: "Akses ditolak. Mohon set Firebase Rules di Console." };
-    }
-    return { valid: false, message: "Terjadi kesalahan sistem. Cek koneksi internet." };
+    return { valid: false, message: "Kesalahan koneksi." };
   }
 };
 
@@ -243,64 +206,25 @@ export const submitVote = async (
   voterName: string,
   voterBlock: string 
 ): Promise<{ success: boolean; message: string }> => {
-  // SAFETY CHECK: Pastikan auth active sebelum transaksi
-  if (!auth.currentUser) {
-    try {
-      await signInAnonymously(auth);
-    } catch (e) {
-      return { success: false, message: "Gagal autentikasi ke server. Coba refresh halaman." };
-    }
-  }
+  if (!auth.currentUser) await signInAnonymously(auth);
 
   const tokenRef = doc(db, "tokens", token.toUpperCase());
   const candidateRef = doc(db, "candidates", candidateId);
 
-  console.log(`[VOTE START] Token: ${token}, Candidate: ${candidateId}`);
-
   try {
     await runTransaction(db, async (transaction) => {
-      // 1. Check Token
       const tokenDoc = await transaction.get(tokenRef);
-      if (!tokenDoc.exists()) {
-        throw new Error("Token tidak valid/ditemukan di database!");
-      }
-      
-      const tokenData = tokenDoc.data() as TokenData;
-      if (tokenData.isUsed) {
-        throw new Error("Maaf, Token ini sudah digunakan!");
-      }
+      if (!tokenDoc.exists()) throw new Error("Token tidak valid!");
+      if (tokenDoc.data().isUsed) throw new Error("Token sudah digunakan!");
 
-      // 2. Check Candidate
       const candidateDoc = await transaction.get(candidateRef);
-      if (!candidateDoc.exists()) {
-        throw new Error("Data kandidat tidak ditemukan!");
-      }
+      if (!candidateDoc.exists()) throw new Error("Kandidat tidak ditemukan!");
 
-      // 3. Update Token (Mark as used & save used time & candidate selection for analysis)
-      // Note: voterName and voterBlock are already in the doc from registration, but we keep/ensure them here.
-      transaction.update(tokenRef, {
-        isUsed: true,
-        usedAt: Date.now(),
-        candidateId: candidateId
-      });
-
-      // 4. Update Candidate (Increment vote atomically)
-      transaction.update(candidateRef, {
-        votes: increment(1)
-      });
+      transaction.update(tokenRef, { isUsed: true, usedAt: Date.now(), candidateId: candidateId });
+      transaction.update(candidateRef, { votes: increment(1) });
     });
-
-    console.log("[VOTE SUCCESS] Transaction committed.");
-    return { success: true, message: "Suara berhasil disimpan!" };
+    return { success: true, message: "Suara disimpan!" };
   } catch (e: any) {
-    console.error("[VOTE FAILED]", e);
-    
-    // Handle Permission Error specifically
-    if (e.code === 'permission-denied' || (e.message && e.message.includes('permission-denied'))) {
-      return { success: false, message: "PERMISSION DENIED: Cek tab 'Rules' di Firebase Console Anda." };
-    }
-
-    // Return specific error message
-    return { success: false, message: e.message || "Terjadi kesalahan saat menyimpan suara." };
+    return { success: false, message: e.message };
   }
 };
