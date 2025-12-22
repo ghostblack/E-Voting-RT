@@ -219,19 +219,19 @@ export const UserVoting: React.FC<UserVotingProps> = ({ token, voterName, voterB
                          onClick={() => setSelectedCandidate(candidate.id)}
                          className={`
                             relative cursor-pointer transition-all duration-150 flex flex-col
-                            border-2 md:border-4 box-border overflow-hidden
+                            border-2 md:border-4 box-border
                             ${isSelected 
                                 ? 'bg-yellow-50 border-red-800 shadow-[0_0_0_2px_rgba(153,27,27,0.5)] transform scale-[1.01] z-10' 
                                 : 'bg-white border-gray-300 hover:border-gray-500'}
                          `}
                       >
-                         {/* NOMOR URUT */}
-                         <div className="absolute top-0 left-0 right-0 z-20 flex justify-center -mt-3 md:-mt-4">
+                         {/* NOMOR URUT - Penyesuaian agar tidak terpotong dan center */}
+                         <div className="absolute top-0 left-0 right-0 z-20 flex justify-center -mt-3 md:-mt-5">
                             <div className={`
-                                w-10 h-10 md:w-14 md:h-14 
+                                w-10 h-10 md:w-16 md:h-16 
                                 flex items-center justify-center 
                                 font-black text-xl md:text-3xl 
-                                rounded shadow-md border-2 border-white
+                                rounded-lg shadow-xl border-4 border-white
                                 ${isSelected ? 'bg-red-800 text-white' : 'bg-black text-white'}
                             `}>
                                 {candidate.noUrut}
@@ -239,7 +239,7 @@ export const UserVoting: React.FC<UserVotingProps> = ({ token, voterName, voterB
                          </div>
 
                          {/* Foto Area */}
-                         <div className="relative w-full pt-[100%] md:pt-[100%] overflow-hidden bg-gray-200 mt-4">
+                         <div className="relative w-full pt-[100%] md:pt-[100%] overflow-hidden bg-gray-200 mt-5 md:mt-7">
                             <img 
                                src={candidate.photoUrl} 
                                alt={candidate.name} 

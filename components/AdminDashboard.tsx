@@ -30,7 +30,7 @@ import { Button, Input, Card, Badge, Select, Modal } from './UIComponents';
 
 const BarImageLabel = (props: any) => {
   const { x, y, width, index, candidates } = props;
-  const candidate = candidates[index];
+  const candidate = candidates && candidates[index];
   if (!candidate) return null;
   return (
     <g>
@@ -67,6 +67,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
   const [newVoterName, setNewVoterName] = useState('');
   const [newVoterBlock, setNewVoterBlock] = useState('Blok A');
   const [isRegistering, setIsRegistering] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Settings
   const [startTimeInput, setStartTimeInput] = useState('');
@@ -145,6 +146,81 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
     await registerVoter(newVoterName, newVoterBlock);
     setIsRegistering(false);
     setNewVoterName('');
+  };
+
+  const handleDownloadTemplate = () => {
+    const wsData = [
+      ["Nama", "Blok"],
+      ["Contoh Nama 1", "Blok A"],
+      ["Contoh Nama 2", "Blok B"],
+      ["Contoh Nama 3", "Blok C"]
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template_DPT");
+    XLSX.writeFile(wb, "Template_DPT_PemilihanRT.xlsx");
+  };
+
+  const handleExportDPT = () => {
+    if (tokens.length === 0) {
+      alert("Tidak ada data pemilih untuk diekspor.");
+      return;
+    }
+    const wsData = [
+      ["Nama", "Blok", "Token", "Status"],
+      ...tokens.map(t => [t.voterName, t.voterBlock, t.id, t.isUsed ? "Sudah Memilih" : "Belum Memilih"])
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "DPT_Final");
+    XLSX.writeFile(wb, "DPT_RT_Dengan_Token.xlsx");
+  };
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsRegistering(true);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = evt.target?.result;
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const json: any[] = XLSX.utils.sheet_to_json(sheet);
+
+        // Map data dengan fleksibilitas case-insensitive untuk header
+        const voters = json
+          .filter(row => {
+            const keys = Object.keys(row).map(k => k.toLowerCase());
+            return keys.includes('nama') && keys.includes('blok');
+          })
+          .map(row => {
+            const namaKey = Object.keys(row).find(k => k.toLowerCase() === 'nama') || 'Nama';
+            const blokKey = Object.keys(row).find(k => k.toLowerCase() === 'blok') || 'Blok';
+            return {
+              name: String(row[namaKey]).trim(),
+              block: String(row[blokKey]).trim()
+            };
+          })
+          .filter(v => v.name && v.block);
+
+        if (voters.length > 0) {
+          await registerVotersBatch(voters);
+          alert(`Berhasil mendaftarkan ${voters.length} pemilih baru secara otomatis.`);
+        } else {
+          alert("Data tidak ditemukan. Pastikan file Excel memiliki kolom 'Nama' dan 'Blok'.");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Terjadi kesalahan saat membaca file Excel.");
+      } finally {
+        setIsRegistering(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
   };
 
   const confirmResetData = async () => {
@@ -278,17 +354,125 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
             </div>
             
             <Card className="p-6 h-[500px]"><h3 className="font-black text-slate-800 mb-10 border-l-4 border-blue-500 pl-2 uppercase">Grafik Perolehan Suara</h3>
-              <ResponsiveContainer width="100%" height="100%"><BarChart data={candidates} margin={{ top: 80 }}><CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" /><XAxis dataKey="name" tick={{fill: '#64748b', fontWeight: 'bold'}} /><Tooltip cursor={{fill: '#f8fafc'}} /><Bar dataKey="votes" radius={[12, 12, 0, 0]}>{candidates.map((e,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}<LabelList dataKey="votes" position="top" content={<BarImageLabel candidates={candidates}/>}/></Bar></BarChart></ResponsiveContainer>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={candidates} margin={{ top: 80 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" tick={{fill: '#64748b', fontWeight: 'bold'}} />
+                  <Tooltip cursor={{fill: '#f8fafc'}} />
+                  <Bar dataKey="votes" radius={[12, 12, 0, 0]}>
+                    {candidates.map((e,i)=><Cell key={i} fill={COLORS[i%COLORS.length]}/>)}
+                    <LabelList 
+                      dataKey="votes" 
+                      position="top" 
+                      content={(labelProps: any) => {
+                        const { x, y, width, index } = labelProps;
+                        return <BarImageLabel x={x} y={y} width={width} index={index} candidates={candidates} />;
+                      }} 
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </Card>
           </div>
         )}
 
         {activeTab === 'voters' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="md:col-span-1 h-fit"><h3 className="font-black uppercase text-sm mb-4">Tambah Pemilih</h3><form onSubmit={handleRegisterVoter} className="space-y-4"><Input label="Nama" value={newVoterName} onChange={e=>setNewVoterName(e.target.value)} required/><Select label="Blok" value={newVoterBlock} onChange={e=>setNewVoterBlock(e.target.value)} options={[{value:'Blok A',label:'Blok A'},{value:'Blok B',label:'Blok B'},{value:'Blok C',label:'Blok C'},{value:'Blok D',label:'Blok D'},{value:'PHI',label:'PHI'}]}/><Button type="submit" className="w-full" isLoading={isRegistering}>Daftar</Button></form></Card>
+            <div className="md:col-span-1 space-y-6">
+               <Card className="h-fit">
+                  <h3 className="font-black uppercase text-xs mb-4 text-slate-400 tracking-widest">Tambah Pemilih Tunggal</h3>
+                  <form onSubmit={handleRegisterVoter} className="space-y-4">
+                     <Input label="Nama Lengkap" value={newVoterName} onChange={e=>setNewVoterName(e.target.value)} required placeholder="Contoh: Budi Santoso"/>
+                     <Select label="Blok Rumah" value={newVoterBlock} onChange={e=>setNewVoterBlock(e.target.value)} options={[{value:'Blok A',label:'Blok A'},{value:'Blok B',label:'Blok B'},{value:'Blok C',label:'Blok C'},{value:'Blok D',label:'Blok D'},{value:'PHI',label:'PHI'}]}/>
+                     <Button type="submit" className="w-full py-3" isLoading={isRegistering}>Daftarkan Pemilih</Button>
+                  </form>
+               </Card>
+
+               <Card className="bg-slate-50 border-dashed border-2 border-slate-200">
+                  <h3 className="font-black uppercase text-xs mb-2 text-blue-600 tracking-widest">Import DPT (Excel)</h3>
+                  <p className="text-[10px] text-slate-500 mb-4 leading-relaxed font-medium">
+                     Gunakan template excel untuk mendaftarkan banyak pemilih. Sistem otomatis membuat token unik.
+                  </p>
+                  <div className="flex flex-col gap-2">
+                     <button 
+                        onClick={handleDownloadTemplate} 
+                        className="flex items-center justify-center gap-2 w-full py-2.5 bg-white border border-slate-200 text-slate-600 font-bold text-[10px] uppercase rounded-lg hover:bg-slate-100 transition-colors"
+                     >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        Download Template Import
+                     </button>
+                     <button 
+                        onClick={() => fileInputRef.current?.click()} 
+                        className="flex items-center justify-center gap-2 w-full py-2.5 bg-blue-600 text-white font-bold text-[10px] uppercase rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                        disabled={isRegistering}
+                     >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                        Upload & Proses Import
+                     </button>
+                     <input type="file" ref={fileInputRef} onChange={handleImportExcel} accept=".xlsx, .xls" className="hidden" />
+                  </div>
+               </Card>
+            </div>
+
             <div className="md:col-span-2 space-y-4">
-              <div className="flex justify-between items-center"><h3 className="text-xl font-black uppercase">Daftar Pemilih</h3></div>
-              <Card className="p-0 overflow-hidden"><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="bg-slate-50"><tr><th className="px-6 py-4 font-black uppercase text-[10px]">Nama</th><th className="px-6 py-4 font-black uppercase text-[10px]">Blok</th><th className="px-6 py-4 font-black uppercase text-[10px]">Token</th><th className="px-6 py-4 font-black uppercase text-[10px]">Status</th><th className="px-6 py-4 font-black uppercase text-[10px]">Aksi</th></tr></thead><tbody className="divide-y">{filteredTokens.map(t=>(<tr key={t.id}><td className="px-6 py-4 font-bold">{t.voterName}</td><td className="px-6 py-4">{t.voterBlock}</td><td className="px-6 py-4 font-mono font-bold text-blue-600">{t.id}</td><td className="px-6 py-4"><Badge type={t.isUsed?'success':'neutral'}>{t.isUsed?'Sudah':'Belum'}</Badge></td><td className="px-6 py-4"><button onClick={()=>setTokenToDelete(t)} className="text-red-400 hover:text-red-600">Hapus</button></td></tr>))}</tbody></table></div></Card>
+              <div className="flex justify-between items-end">
+                <div className="space-y-1">
+                   <h3 className="text-xl font-black uppercase">Daftar Pemilih Tetap (DPT)</h3>
+                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total: {filteredTokens.length} Pemilih Terdaftar</p>
+                </div>
+                <div className="flex gap-2">
+                   <button 
+                      onClick={handleExportDPT} 
+                      className="flex items-center justify-center gap-2 px-4 py-1.5 bg-green-600 text-white font-black text-[10px] uppercase rounded-lg hover:bg-green-700 transition-all shadow-md active:scale-95"
+                   >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                      Export DPT ke Excel
+                   </button>
+                   <Select value={filterBlock} onChange={e=>setFilterBlock(e.target.value)} options={[{value:'ALL',label:'Semua Blok'},{value:'Blok A',label:'Blok A'},{value:'Blok B',label:'Blok B'},{value:'Blok C',label:'Blok C'},{value:'Blok D',label:'Blok D'},{value:'PHI',label:'PHI'}]} className="py-1 text-[10px] font-bold uppercase"/>
+                </div>
+              </div>
+              <Card className="p-0 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-6 py-4 font-black uppercase text-[10px]">Nama Pemilih</th>
+                        <th className="px-6 py-4 font-black uppercase text-[10px]">Blok</th>
+                        <th className="px-6 py-4 font-black uppercase text-[10px]">Token Akses</th>
+                        <th className="px-6 py-4 font-black uppercase text-[10px]">Status</th>
+                        <th className="px-6 py-4 font-black uppercase text-[10px]">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {filteredTokens.length > 0 ? filteredTokens.map(t=>(
+                        <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4 font-bold text-slate-800">{t.voterName}</td>
+                          <td className="px-6 py-4 text-slate-500 font-medium">{t.voterBlock}</td>
+                          <td className="px-6 py-4">
+                            <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-md font-mono font-black text-sm tracking-widest border border-blue-100">
+                              {t.id}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <Badge type={t.isUsed?'success':'neutral'} className="uppercase tracking-tighter">
+                              {t.isUsed ? 'SUDAH MEMILIH' : 'BELUM MEMILIH'}
+                            </Badge>
+                          </td>
+                          <td className="px-6 py-4">
+                            <button onClick={()=>setTokenToDelete(t)} className="text-red-300 hover:text-red-600 transition-colors p-2 rounded-lg hover:bg-red-50">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                          </td>
+                        </tr>
+                      )) : (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-10 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">Belum ada data pemilih</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
             </div>
           </div>
         )}

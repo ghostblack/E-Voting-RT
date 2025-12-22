@@ -108,7 +108,7 @@ const UserPage: React.FC<UserPageProps> = ({ onGoToAdmin }) => {
         setError(result.message);
       }
     } catch (err) {
-      setError("Terjadi kesalahan koneksi. Coba refresh.");
+      setError("Terjadi kesalahan koneksi.");
     } finally {
       setLoading(false);
     }
@@ -183,18 +183,10 @@ const UserPage: React.FC<UserPageProps> = ({ onGoToAdmin }) => {
   }
 
   const BackgroundWrapper: React.FC<{children: React.ReactNode}> = ({children}) => (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans bg-[#F4F7FB] text-slate-900">
-      <div className="absolute top-4 right-4 z-40">
-        <button 
-          onClick={onGoToAdmin}
-          className="px-4 py-1.5 rounded-full text-[10px] font-black tracking-widest uppercase border border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-400 transition-all flex items-center gap-1 bg-white"
-        >
-          Admin Login
-        </button>
-      </div>
-      <div className="w-full max-w-lg z-10 relative">
-         {children}
-      </div>
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
+        <div className="w-full max-w-md z-10">
+          {children}
+        </div>
     </div>
   );
 
@@ -240,17 +232,16 @@ const UserPage: React.FC<UserPageProps> = ({ onGoToAdmin }) => {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F7FB] flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
         <div className="w-full max-w-md z-10">
           
-          <div className="text-center mb-6">
-            <h1 className="text-3xl font-black text-[#1E293B] tracking-tight leading-tight uppercase">
-              E-VOTING<br/><span className="text-blue-600">PEMILIHAN KETUA RT</span>
+          <div className="text-center mb-8">
+            <h1 className="text-4xl font-black text-[#1E293B] tracking-tight leading-tight uppercase">
+              E-VOTING<br/><span className="text-blue-700">PEMILIHAN KETUA RT</span>
             </h1>
           </div>
 
-          <Card className="shadow-xl border-none rounded-3xl overflow-hidden p-8 bg-white">
-            {/* KOTAK PETUNJUK (DESIGN DARI IMAGE USER) */}
+          <Card className="shadow-2xl border-2 border-gray-100 rounded-3xl p-8 bg-white">
             <div className="bg-[#F0F7FF] p-5 rounded-xl flex gap-4 mb-8 items-start border border-[#E1EEFF]">
                <div className="mt-0.5">
                   <div className="w-6 h-6 rounded-full border-2 border-blue-500 flex items-center justify-center text-blue-500 font-bold italic text-sm">i</div>
@@ -265,20 +256,20 @@ const UserPage: React.FC<UserPageProps> = ({ onGoToAdmin }) => {
 
             <form onSubmit={handleCheckToken} className="space-y-6">
               <div className="space-y-3">
-                <label className="text-[#334155] font-bold text-base block">Token Pemilihan</label>
+                <label className="text-[#334155] font-black uppercase tracking-widest text-xs block">Token Pemilihan</label>
                 <input
                   type="text"
-                  className="w-full px-4 py-5 text-center text-5xl font-mono font-bold border-2 border-[#E2E8F0] rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all uppercase placeholder-slate-100 text-[#1E293B] bg-white"
-                  placeholder=""
+                  className="w-full px-4 py-5 text-center text-5xl font-mono font-bold border-2 border-gray-100 rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:border-blue-600 outline-none transition-all uppercase placeholder-slate-100 text-[#1E293B] bg-slate-50"
+                  placeholder="------"
                   maxLength={6}
                   value={tokenInput}
                   onChange={(e) => setTokenInput(e.target.value.toUpperCase())}
                 />
               </div>
 
-              {error && <div className="text-center text-red-600 font-bold text-xs uppercase">{error}</div>}
+              {error && <div className="text-center text-red-600 font-bold text-xs uppercase bg-red-50 py-2 border border-red-100 rounded-lg">{error}</div>}
               
-              <Button type="submit" className="w-full py-5 text-lg font-bold tracking-wide bg-[#3B82F6] hover:bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-500/20" isLoading={loading}>
+              <Button type="submit" className="w-full py-5 text-lg font-black uppercase tracking-widest bg-blue-700 hover:bg-blue-800 text-white rounded-2xl shadow-lg transition-all active:scale-[0.98]" isLoading={loading}>
                 Verifikasi Token
               </Button>
             </form>
@@ -286,26 +277,28 @@ const UserPage: React.FC<UserPageProps> = ({ onGoToAdmin }) => {
 
           <div className="text-center mt-12">
              <button onClick={onGoToAdmin} className="text-[10px] font-black text-slate-300 hover:text-slate-600 transition-colors uppercase tracking-[0.2em]">
-                Administrator Panel Access
+                Administrator Access
              </button>
           </div>
         </div>
 
       {showConfirmation && confirmedVoter && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={handleCancelIdentity}></div>
-           <div className="relative z-10 w-full max-w-sm bg-white rounded-3xl p-8 text-center animate-scale-in">
-              <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Identitas Terdeteksi</h2>
-              <div className="text-3xl font-black text-slate-900 mb-6">{confirmedVoter.voterName}</div>
-              <div className="space-y-3">
-                 <Button onClick={handleConfirmIdentity} className="w-full py-4 bg-slate-900">YA, LANJUTKAN</Button>
-                 <button onClick={handleCancelIdentity} className="text-xs text-slate-400 font-bold">Bukan Saya</button>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+           <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={handleCancelIdentity}></div>
+           <div className="relative z-10 w-full max-w-sm bg-white border border-gray-200 shadow-2xl rounded-[2.5rem] p-8 text-center animate-scale-in">
+              <div className="inline-block bg-blue-50 text-blue-600 text-[10px] font-black px-4 py-1 rounded-full uppercase tracking-widest mb-6">Konfirmasi Pemilih</div>
+              <h2 className="text-3xl font-black text-gray-900 mb-1 leading-tight">{confirmedVoter.voterName}</h2>
+              <div className="text-sm font-bold text-gray-400 mb-10">Blok: {confirmedVoter.voterBlock}</div>
+              
+              <div className="flex flex-col gap-3">
+                 <Button onClick={handleConfirmIdentity} className="w-full py-5 bg-gray-900 hover:bg-black text-white font-black uppercase tracking-widest text-sm rounded-2xl">YA, LANJUTKAN</Button>
+                 <button onClick={handleCancelIdentity} className="text-[10px] font-black text-gray-400 hover:text-red-600 uppercase tracking-widest transition-colors py-2">Bukan Saya, Batalkan</button>
               </div>
            </div>
         </div>
       )}
       <style>{`
-        @keyframes scale-in { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes scale-in { 0% { transform: scale(0.95); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
         .animate-scale-in { animation: scale-in 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
       `}</style>
     </div>
@@ -341,14 +334,15 @@ const AdminPage: React.FC<AdminPageProps> = ({ onBack }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-white p-4">
-      <Card className="w-full max-w-md p-10">
-        <h2 className="text-3xl font-black text-center mb-10">ADMIN AUTH</h2>
+      <Card className="w-full max-w-md p-10 shadow-2xl rounded-3xl border-slate-50">
+        <div className="w-16 h-16 bg-black text-white rounded-2xl flex items-center justify-center mx-auto mb-6 text-2xl font-black">A</div>
+        <h2 className="text-2xl font-black text-center mb-10 tracking-tighter uppercase">Admin Authentication</h2>
         <form onSubmit={handleAdminLogin} className="space-y-6">
           <Input label="Username" value={adminUser} onChange={(e) => setAdminUser(e.target.value)} />
           <Input label="Password" type="password" value={adminPass} onChange={(e) => setAdminPass(e.target.value)} />
-          {error && <div className="text-red-500 text-xs font-bold text-center">{error}</div>}
-          <Button type="submit" className="w-full py-4">MASUK</Button>
-          <button type="button" onClick={onBack} className="w-full text-xs font-bold text-slate-400 mt-4">KEMBALI</button>
+          {error && <div className="text-red-500 text-[10px] font-black text-center uppercase">{error}</div>}
+          <Button type="submit" className="w-full py-4 bg-black text-white font-black uppercase tracking-widest text-xs rounded-2xl">MASUK</Button>
+          <button type="button" onClick={onBack} className="w-full text-[10px] font-black text-slate-400 mt-4 uppercase tracking-widest">KEMBALI KE BERANDA</button>
         </form>
       </Card>
     </div>
@@ -363,7 +357,7 @@ function App() {
     initAuth().finally(() => setIsInitializing(false));
   }, []);
 
-  if (isInitializing) return <div className="min-h-screen flex items-center justify-center font-black">MEMUAT SISTEM...</div>;
+  if (isInitializing) return <div className="min-h-screen flex items-center justify-center font-black tracking-widest text-slate-400 animate-pulse">MEMUAT SISTEM...</div>;
 
   return currentView === 'USER' ? <UserPage onGoToAdmin={() => setCurrentView('ADMIN')} /> : <AdminPage onBack={() => setCurrentView('USER')} />;
 }
