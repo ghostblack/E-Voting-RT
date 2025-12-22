@@ -1,27 +1,27 @@
 
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" class="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>E-Voting Pemilihan Ketua RT</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Force light mode even if system prefers dark
+      tailwind.config = {
+        darkMode: 'class'
+      }
+    </script>
     <style>
        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
        body {
          font-family: 'Inter', sans-serif;
+         background-color: #ffffff !important;
+         color: #0f172a !important;
        }
-       .animate-blob {
-         animation: blob 7s infinite;
-       }
-       .animation-delay-2000 {
-         animation-delay: 2s;
-       }
-       @keyframes blob {
-         0% { transform: translate(0px, 0px) scale(1); }
-         33% { transform: translate(30px, -50px) scale(1.1); }
-         66% { transform: translate(-20px, 20px) scale(0.9); }
-         100% { transform: translate(0px, 0px) scale(1); }
+       /* Ensure text is always dark even in system dark mode */
+       .light-text-fix {
+         color: #1e293b !important;
        }
     </style>
   <script type="importmap">
@@ -42,8 +42,7 @@
 }
 </script>
 </head>
-  <body>
+  <body class="bg-white text-slate-900">
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
   </body>
 </html>

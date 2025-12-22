@@ -97,7 +97,8 @@ export const Card: React.FC<{ children: React.ReactNode, className?: string }> =
 };
 
 // --- BADGE ---
-export const Badge: React.FC<{ children: React.ReactNode, type?: 'success' | 'warning' | 'error' | 'neutral' }> = ({ children, type = 'neutral' }) => {
+// Updated Badge component to support custom className prop
+export const Badge: React.FC<{ children: React.ReactNode, type?: 'success' | 'warning' | 'error' | 'neutral', className?: string }> = ({ children, type = 'neutral', className = '' }) => {
   const styles = {
     success: 'bg-green-100 text-green-800',
     warning: 'bg-yellow-100 text-yellow-800',
@@ -105,7 +106,7 @@ export const Badge: React.FC<{ children: React.ReactNode, type?: 'success' | 'wa
     neutral: 'bg-gray-100 text-gray-800'
   };
   return (
-    <span className={`px-2 py-1 rounded-full text-xs font-bold ${styles[type]}`}>
+    <span className={`px-2 py-1 rounded-full text-xs font-bold ${styles[type]} ${className}`}>
       {children}
     </span>
   );
