@@ -313,37 +313,51 @@ const AdminPage: React.FC<AdminPageProps> = ({ onBack }) => {
   const [adminUser, setAdminUser] = useState('');
   const [adminPass, setAdminPass] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isOperator, setIsOperator] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleAdminLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    // Admin Credential
     if (adminUser === 'admin' && adminPass === 'kamujahat') {
       setIsLoggedIn(true);
+      setIsOperator(false);
       setError(null);
-    } else {
+    } 
+    // Operator Credential
+    else if (adminUser === 'operator' && adminPass === 'kingmu') {
+      setIsLoggedIn(true);
+      setIsOperator(true);
+      setError(null);
+    }
+    else {
       setError("Username atau Password salah!");
     }
   };
 
   const handleAdminLogout = () => {
     setIsLoggedIn(false);
+    setIsOperator(false);
     onBack();
   };
 
-  if (isLoggedIn) return <AdminDashboard onLogout={handleAdminLogout} />;
+  if (isLoggedIn) return <AdminDashboard onLogout={handleAdminLogout} isOperator={isOperator} />;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-white p-4">
       <Card className="w-full max-w-md p-10 shadow-2xl rounded-3xl border-slate-50">
         <div className="w-16 h-16 bg-black text-white rounded-2xl flex items-center justify-center mx-auto mb-6 text-2xl font-black">A</div>
-        <h2 className="text-2xl font-black text-center mb-10 tracking-tighter uppercase">Admin Authentication</h2>
+        <h2 className="text-2xl font-black text-center mb-10 tracking-tighter uppercase">Authentication</h2>
         <form onSubmit={handleAdminLogin} className="space-y-6">
-          <Input label="Username" value={adminUser} onChange={(e) => setAdminUser(e.target.value)} />
+          <Input label="Username" value={adminUser} onChange={(e) => setAdminUser(e.target.value)} placeholder="admin / operator" />
           <Input label="Password" type="password" value={adminPass} onChange={(e) => setAdminPass(e.target.value)} />
           {error && <div className="text-red-500 text-[10px] font-black text-center uppercase">{error}</div>}
           <Button type="submit" className="w-full py-4 bg-black text-white font-black uppercase tracking-widest text-xs rounded-2xl">MASUK</Button>
           <button type="button" onClick={onBack} className="w-full text-[10px] font-black text-slate-400 mt-4 uppercase tracking-widest">KEMBALI KE BERANDA</button>
         </form>
+        <div className="mt-8 pt-6 border-t border-slate-50 text-center">
+           <p className="text-[10px] text-slate-400 font-bold uppercase">Gunakan akun Operator untuk akses Live Count saja.</p>
+        </div>
       </Card>
     </div>
   );

@@ -50,8 +50,8 @@ const BarImageLabel = (props: any) => {
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
 
-export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
-  const [activeTab, setActiveTab] = useState<'results' | 'candidates' | 'voters' | 'live_count' | 'settings'>('results');
+export const AdminDashboard: React.FC<{ onLogout: () => void, isOperator?: boolean }> = ({ onLogout, isOperator = false }) => {
+  const [activeTab, setActiveTab] = useState<'results' | 'candidates' | 'voters' | 'live_count' | 'settings'>(isOperator ? 'live_count' : 'results');
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [tokens, setTokens] = useState<TokenData[]>([]);
   const [electionConfig, setElectionConfig] = useState<ElectionConfig | null>(null);
@@ -272,7 +272,9 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
               <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-teal-400 uppercase tracking-tighter">Live Count</h1>
               <Badge type={currentStatus.type}>{currentStatus.label}</Badge>
            </div>
-           <Button variant="outline" onClick={() => setActiveTab('results')} className="border-gray-600 text-gray-400">Keluar Dashboard</Button>
+           <Button variant="outline" onClick={() => isOperator ? onLogout() : setActiveTab('results')} className="border-gray-600 text-gray-400">
+             {isOperator ? 'Keluar / Logout' : 'Keluar Dashboard'}
+           </Button>
         </div>
         <div className="flex-grow grid grid-cols-1 lg:grid-cols-4 gap-8">
            <div className="lg:col-span-3 bg-gray-800 rounded-3xl p-8 border border-gray-700 relative flex flex-col">
@@ -329,14 +331,17 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
           <div className="flex items-center gap-4">
              <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-white font-bold">A</div>
-                <h1 className="text-xl font-bold">Admin Panel</h1>
+                <h1 className="text-xl font-bold">{isOperator ? 'Operator Panel' : 'Admin Panel'}</h1>
              </div>
              <Badge type={currentStatus.type}>{currentStatus.label}</Badge>
           </div>
-          <div className="flex gap-3"><Button variant="danger" onClick={() => setShowResetModal(true)} className="text-[10px] font-black uppercase px-4">Reset Data</Button><Button variant="secondary" onClick={onLogout} className="text-[10px] font-black uppercase px-4">Keluar</Button></div>
+          <div className="flex gap-3">
+             {!isOperator && <Button variant="danger" onClick={() => setShowResetModal(true)} className="text-[10px] font-black uppercase px-4">Reset Data</Button>}
+             <Button variant="secondary" onClick={onLogout} className="text-[10px] font-black uppercase px-4">Keluar</Button>
+          </div>
         </div>
         <div className="bg-white border-b"><div className="max-w-7xl mx-auto px-4 flex gap-6">
-            {['results', 'voters', 'candidates', 'settings'].map(tab => (
+            {!isOperator && ['results', 'voters', 'candidates', 'settings'].map(tab => (
               <button key={tab} onClick={() => setActiveTab(tab as any)} className={`py-3 px-1 font-bold text-sm border-b-2 capitalize transition-colors ${activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-800'}`}>{tab === 'results' ? 'Hasil' : tab === 'voters' ? 'DPT' : tab === 'candidates' ? 'Kandidat' : 'Jadwal'}</button>
             ))}
             <button onClick={() => setActiveTab('live_count')} className="py-3 px-1 font-bold text-sm text-red-600 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-600 animate-pulse"></span>Live Count</button>
@@ -344,7 +349,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {activeTab === 'results' && (
+        {activeTab === 'results' && !isOperator && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card className="flex flex-col items-center py-6 bg-blue-600 text-white border-none"><span className="text-xs font-black uppercase opacity-70">Total Suara</span><span className="text-4xl font-black">{totalVotes}</span></Card>
@@ -376,7 +381,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
           </div>
         )}
 
-        {activeTab === 'voters' && (
+        {activeTab === 'voters' && !isOperator && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="md:col-span-1 space-y-6">
                <Card className="h-fit">
@@ -425,7 +430,7 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                       onClick={handleExportDPT} 
                       className="flex items-center justify-center gap-2 px-4 py-1.5 bg-green-600 text-white font-black text-[10px] uppercase rounded-lg hover:bg-green-700 transition-all shadow-md active:scale-95"
                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                       Export DPT ke Excel
                    </button>
                    <Select value={filterBlock} onChange={e=>setFilterBlock(e.target.value)} options={[{value:'ALL',label:'Semua Blok'},{value:'Blok A',label:'Blok A'},{value:'Blok B',label:'Blok B'},{value:'Blok C',label:'Blok C'},{value:'Blok D',label:'Blok D'},{value:'PHI',label:'PHI'}]} className="py-1 text-[10px] font-bold uppercase"/>
@@ -477,14 +482,14 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
           </div>
         )}
 
-        {activeTab === 'candidates' && (
+        {activeTab === 'candidates' && !isOperator && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="h-fit"><h3 className="font-black uppercase text-sm mb-4">Form Kandidat</h3><form onSubmit={handleSaveCandidate} className="space-y-4"><Input label="Nama" value={formCandidate.name} onChange={e=>setFormCandidate({...formCandidate,name:e.target.value})} required/><Input label="No. Urut" type="number" value={formCandidate.noUrut} onChange={e=>setFormCandidate({...formCandidate,noUrut:parseInt(e.target.value)})}/><Input label="Foto URL" value={formCandidate.photoUrl} onChange={e=>setFormCandidate({...formCandidate,photoUrl:e.target.value})}/><Button type="submit" className="w-full">{editingId ? 'Update' : 'Simpan'}</Button></form></Card>
             <div className="md:col-span-2 space-y-3">{candidates.map(c=>(<div key={c.id} className="bg-white p-4 rounded-xl border flex items-center gap-4"><img src={c.photoUrl} className="w-12 h-12 rounded-full object-cover"/><div className="flex-grow font-bold">{c.name} <Badge className="ml-2">No {c.noUrut}</Badge></div><div className="text-xl font-black text-blue-600 px-4">{c.votes} Suara</div><div className="flex gap-2"><button onClick={() => { setEditingId(c.id); setFormCandidate({ name: c.name, address: c.address || 'Blok A', noUrut: c.noUrut, photoUrl: c.photoUrl }); }} className="text-blue-500">Edit</button><button onClick={()=>deleteCandidate(c.id)} className="text-red-500">Hapus</button></div></div>))}</div>
           </div>
         )}
 
-        {activeTab === 'settings' && (
+        {activeTab === 'settings' && !isOperator && (
            <Card className="max-w-md mx-auto">
              <div className="flex justify-between items-center mb-6">
                 <h3 className="font-black uppercase text-sm">Pengaturan Jadwal TPS</h3>
@@ -508,6 +513,14 @@ export const AdminDashboard: React.FC<{ onLogout: () => void }> = ({ onLogout })
                 <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest text-center">Waktu saat ini: {new Date(currentTime).toLocaleTimeString('id-ID')}</p>
              </div>
            </Card>
+        )}
+
+        {isOperator && activeTab !== 'live_count' && (
+           <div className="text-center py-20">
+             <h2 className="text-2xl font-black text-slate-300 uppercase tracking-widest">Akses Terbatas</h2>
+             <p className="text-slate-400 mt-2">Operator hanya diperbolehkan mengakses tampilan Live Count.</p>
+             <Button onClick={() => setActiveTab('live_count')} className="mt-6">Kembali ke Live Count</Button>
+           </div>
         )}
       </main>
       <Modal isOpen={showResetModal} title="Reset Data" onClose={()=>setShowResetModal(false)} onConfirm={confirmResetData} confirmText="YA, RESET SEMUA" isProcessing={isResetting}><p>Menghapus semua pemilih dan mereset suara kandidat ke nol. Lanjutkan?</p></Modal>
