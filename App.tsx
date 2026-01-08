@@ -207,6 +207,11 @@ const UserPage: React.FC<UserPageProps> = ({ onGoToAdmin }) => {
                    <CountdownTimer targetDate={electionConfig.startTime} />
                 </div>
              )}
+             <div className="text-center mt-12">
+                <button onClick={onGoToAdmin} className="text-[10px] font-black text-slate-300 hover:text-slate-600 transition-colors uppercase tracking-[0.2em]">
+                    Administrator Access
+                </button>
+             </div>
            </div>
         </BackgroundWrapper>
      )
@@ -226,6 +231,11 @@ const UserPage: React.FC<UserPageProps> = ({ onGoToAdmin }) => {
              <p className="text-slate-500 font-bold text-center px-4">
                 Proses pemungutan suara telah berakhir.
              </p>
+             <div className="text-center mt-12">
+                <button onClick={onGoToAdmin} className="text-[10px] font-black text-slate-300 hover:text-slate-600 transition-colors uppercase tracking-[0.2em]">
+                    Administrator Access
+                </button>
+             </div>
            </div>
         </BackgroundWrapper>
      )
